@@ -8,7 +8,7 @@
 - **Module Name:** Rule-Based Fraud Detection Engine
 - **Document Path:** `docs/test-cases/05-fraud-detection-engine.md`
 - **Version:** 1.0.0
-- **Status:** Complete / Ready for Execution
+- **Status:** Complete / Executed & Passed
 - **Parent Documents (Sources of Truth):**
   - `docs/FraudShield_SRS.md`
   - `docs/context.md`
@@ -40,7 +40,7 @@ This document specifies the unit and integration test cases for **Module 5: Rule
   - `ruleCode`: `"RULE_AMT_EXTREME"`
 - **Test Type:** Unit / Rule
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -57,7 +57,7 @@ This document specifies the unit and integration test cases for **Module 5: Rule
   - `score`: `35`
 - **Test Type:** Unit / Rule
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -74,7 +74,7 @@ This document specifies the unit and integration test cases for **Module 5: Rule
   - `score`: `0`
 - **Test Type:** Unit / Boundary
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -92,7 +92,7 @@ This document specifies the unit and integration test cases for **Module 5: Rule
   - `ruleCode`: `"RULE_VELOCITY_HIGH"`
 - **Test Type:** Unit / Rule
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -110,7 +110,7 @@ This document specifies the unit and integration test cases for **Module 5: Rule
   - `ruleCode`: `"RULE_DEVICE_NEW"`
 - **Test Type:** Unit / Rule
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -128,7 +128,7 @@ This document specifies the unit and integration test cases for **Module 5: Rule
   - `ruleCode`: `"RULE_BENEFICIARY_NEW"`
 - **Test Type:** Unit / Rule
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -146,7 +146,7 @@ This document specifies the unit and integration test cases for **Module 5: Rule
   - `ruleCode`: `"RULE_FAIL_BURST"`
 - **Test Type:** Unit / Rule
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -164,7 +164,7 @@ This document specifies the unit and integration test cases for **Module 5: Rule
   - `ruleCode`: `"RULE_DORMANT_SPIKE"`
 - **Test Type:** Unit / Rule
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -182,7 +182,7 @@ This document specifies the unit and integration test cases for **Module 5: Rule
   - `riskLevel`: `"HIGH"`
 - **Test Type:** Unit / Mathematical
 - **Priority:** Critical
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -204,4 +204,25 @@ This document specifies the unit and integration test cases for **Module 5: Rule
   - Score 100 -> `HIGH`
 - **Test Type:** Unit / Boundary
 - **Priority:** Critical
-- **Status:** Not Run
+- **Status:** Passed
+
+---
+
+## 3. Test Execution Summary
+
+| Test Case ID | Test Description | Category | Result |
+| :--- | :--- | :--- | :--- |
+| `TC-M5-001` | `RULE_AMT_EXTREME` Triggers on Amount > ₹50,000 | Heuristic Rule / Extreme Amount | **PASSED** |
+| `TC-M5-002` | `RULE_AMT_EXTREME` Triggers on > 5x Historical Average | Heuristic Rule / Multiplier | **PASSED** |
+| `TC-M5-003` | `RULE_AMT_EXTREME` Boundary (Exactly ₹50,000) Does NOT Trigger | Boundary Testing | **PASSED** |
+| `TC-M5-004` | `RULE_VELOCITY_HIGH` Triggers on > 3 Transactions in 10 Minutes | Heuristic Rule / Velocity | **PASSED** |
+| `TC-M5-005` | `RULE_DEVICE_NEW` Triggers on Unrecognized Device | Heuristic Rule / Device | **PASSED** |
+| `TC-M5-006` | `RULE_BENEFICIARY_NEW` Triggers on > ₹10,000 to Beneficiary < 24h Ago | Heuristic Rule / Beneficiary | **PASSED** |
+| `TC-M5-007` | `RULE_FAIL_BURST` Triggers on >= 3 Failed Attempts in 15 Minutes | Heuristic Rule / Failure Burst | **PASSED** |
+| `TC-M5-008` | `RULE_DORMANT_SPIKE` Triggers on > ₹5,000 After > 30 Days Inactivity | Heuristic Rule / Dormancy | **PASSED** |
+| `TC-M5-009` | Score Capping at 100 When Multiple Rules Exceed 100 | Scorer / Cap Logic | **PASSED** |
+| `TC-M5-010` | Risk Tier Boundary Categorization (Low, Medium, High) | Scorer / Tier Boundaries | **PASSED** |
+
+**Total Tests:** 10 | **Passed:** 10 | **Failed:** 0 | **Skipped:** 0
+**Execution Status:** ALL TESTS PASSED (100% Pass Rate)
+
