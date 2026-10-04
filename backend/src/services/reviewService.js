@@ -1,5 +1,6 @@
 const Transaction = require('../models/Transaction');
 const walletService = require('./walletService');
+const auditService = require('./auditService');
 
 /**
  * Get all transactions pending analyst review
@@ -97,6 +98,21 @@ const resolveReview = async (transactionId, adminId, decision, resolutionNotes) 
   await transaction.populate('senderId', 'name email');
   await transaction.populate('recipientId', 'name email');
   await transaction.populate('resolvedBy', 'name email');
+
+  // Instrument audit logging (TC-M9-003)
+  const eventType = normalizedDecision === 'APPROVE' ? 'ADMIN_REVIEW_APPROVED' : 'ADMIN_REVIEW_REJECTED';
+  await auditService.logEvent({
+    eventType,
+    actorId: adminId,
+    actorRole: 'admin',
+    targetEntity: { entityType: 'Transaction', entityId: transaction._id },
+    metadata: {
+      decision: normalizedDecision,
+      notes: trimmedNotes,
+      amount: transaction.amount,
+      riskScore: transaction.riskScore
+    }
+  });
 
   return transaction;
 };

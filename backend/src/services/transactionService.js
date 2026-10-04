@@ -4,6 +4,7 @@ const Wallet = require('../models/Wallet');
 const walletService = require('./walletService');
 const deviceService = require('./deviceService');
 const alertService = require('./alertService');
+const auditService = require('./auditService');
 const { collectContext } = require('../engine/contextCollector');
 const { evaluateTransaction } = require('../engine/fraudEngine');
 
@@ -129,6 +130,35 @@ const initiateTransfer = async (senderId, recipientId, amount, note = '', device
       `Your transfer of ₹${numericAmount} to ${recipientUser.name} was blocked due to elevated security risk.`
     );
   }
+
+  // 9. Instrument audit logging (TC-M9-002)
+  await auditService.logEvent({
+    eventType: 'TRANSACTION_INITIATED',
+    actorId: senderId,
+    actorRole: 'customer',
+    targetEntity: { entityType: 'Transaction', entityId: transaction._id },
+    metadata: {
+      amount: numericAmount,
+      recipientId: recipientId.toString(),
+      status: transactionStatus
+    },
+    ipAddress: deviceContext.ipAddress || 'unknown'
+  });
+
+  await auditService.logEvent({
+    eventType: 'FRAUD_EVALUATION_COMPLETED',
+    actorId: senderId,
+    actorRole: 'customer',
+    targetEntity: { entityType: 'Transaction', entityId: transaction._id },
+    metadata: {
+      amount: numericAmount,
+      riskScore: fraudResult.riskScore,
+      riskLevel: fraudResult.riskLevel,
+      triggeredRules: fraudResult.triggeredRules,
+      outcome: transactionStatus
+    },
+    ipAddress: deviceContext.ipAddress || 'unknown'
+  });
 
   return {
     httpStatus,

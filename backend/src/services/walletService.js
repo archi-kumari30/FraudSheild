@@ -70,6 +70,15 @@ const depositFunds = async (userId, amount) => {
     { new: true, upsert: true, setDefaultsOnInsert: true }
   );
 
+  const auditService = require('./auditService');
+  await auditService.logEvent({
+    eventType: 'WALLET_DEPOSIT_COMPLETED',
+    actorId: userId,
+    actorRole: 'customer',
+    targetEntity: { entityType: 'Wallet', entityId: wallet._id },
+    metadata: { amount: roundedAmount, availableBalance: wallet.availableBalance }
+  });
+
   return wallet;
 };
 

@@ -52,6 +52,19 @@ const addBeneficiary = async (userId, recipientEmail, nickname) => {
   await beneficiary.save();
   await beneficiary.populate('recipientAccountId', 'name email role');
 
+  const auditService = require('./auditService');
+  await auditService.logEvent({
+    eventType: 'BENEFICIARY_ADDED',
+    actorId: userId,
+    actorRole: 'customer',
+    targetEntity: { entityType: 'Beneficiary', entityId: beneficiary._id },
+    metadata: {
+      recipientAccountId: recipientUser._id.toString(),
+      recipientEmail: normalizedEmail,
+      nickname: beneficiary.nickname
+    }
+  });
+
   return beneficiary;
 };
 
@@ -84,6 +97,18 @@ const deleteBeneficiary = async (userId, beneficiaryId) => {
     error.code = 'NOT_FOUND';
     throw error;
   }
+
+  const auditService = require('./auditService');
+  await auditService.logEvent({
+    eventType: 'BENEFICIARY_REMOVED',
+    actorId: userId,
+    actorRole: 'customer',
+    targetEntity: { entityType: 'Beneficiary', entityId: beneficiary._id },
+    metadata: {
+      recipientAccountId: beneficiary.recipientAccountId.toString(),
+      nickname: beneficiary.nickname
+    }
+  });
 
   return beneficiary;
 };

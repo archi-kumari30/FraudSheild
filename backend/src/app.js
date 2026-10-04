@@ -13,6 +13,7 @@ const deviceRoutes = require('./routes/deviceRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
 const alertRoutes = require('./routes/alertRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
+const auditRoutes = require('./routes/auditRoutes');
 const deviceContextMiddleware = require('./middleware/deviceContextMiddleware');
 const { authenticateToken, authorizeRole } = require('./middleware/authMiddleware');
 
@@ -72,6 +73,7 @@ const createApp = () => {
   app.use('/api/transactions', transactionRoutes);
   app.use('/api/alerts', alertRoutes);
   app.use('/api/admin/reviews', reviewRoutes);
+  app.use('/api/admin/audit-logs', auditRoutes);
 
   // Simulated test routes for testing middleware in test environment
   if (config.nodeEnv === 'test') {
