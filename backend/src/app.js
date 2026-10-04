@@ -6,6 +6,8 @@ const config = require('./config');
 const requestLogger = require('./middleware/requestLogger');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 const healthRoutes = require('./routes/healthRoutes');
+const authRoutes = require('./routes/authRoutes');
+const { authenticateToken, authorizeRole } = require('./middleware/authMiddleware');
 
 const createApp = () => {
   const app = express();
@@ -55,14 +57,18 @@ const createApp = () => {
 
   // 6. Mount API Routes
   app.use('/api', healthRoutes);
+  app.use('/api/auth', authRoutes);
 
-  // Simulated error route for testing error middleware in test environment
+  // Simulated test routes for testing middleware in test environment
   if (config.nodeEnv === 'test') {
     app.get('/api/test-error', (req, res, next) => {
       next(new Error('Simulated internal server error'));
     });
     app.post('/api/test-body', (req, res) => {
       res.status(200).json({ success: true, received: true });
+    });
+    app.get('/api/test-admin', authenticateToken, authorizeRole(['admin']), (req, res) => {
+      res.status(200).json({ success: true, message: 'Admin access granted' });
     });
   }
 

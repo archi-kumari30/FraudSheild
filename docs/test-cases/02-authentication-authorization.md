@@ -8,7 +8,7 @@
 - **Module Name:** Authentication & Authorization
 - **Document Path:** `docs/test-cases/02-authentication-authorization.md`
 - **Version:** 1.0.0
-- **Status:** Complete / Ready for Execution
+- **Status:** Complete / Executed & Passed
 - **Parent Documents (Sources of Truth):**
   - `docs/FraudShield_SRS.md`
   - `docs/context.md`
@@ -43,7 +43,7 @@ This document specifies the test cases for **Module 2: Authentication & Authoriz
   - Database stores bcrypt-hashed password; `role` equals `'customer'`.
 - **Test Type:** API / Integration
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -61,7 +61,7 @@ This document specifies the test cases for **Module 2: Authentication & Authoriz
   - Error message: `"Email already registered"`.
 - **Test Type:** API / Security
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -79,7 +79,7 @@ This document specifies the test cases for **Module 2: Authentication & Authoriz
   - Client cannot self-promote to `admin`.
 - **Test Type:** Security
 - **Priority:** Critical
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -97,7 +97,7 @@ This document specifies the test cases for **Module 2: Authentication & Authoriz
   - Response contains valid `token` and `user` object with `role: "customer"`.
 - **Test Type:** API / Integration
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -115,7 +115,7 @@ This document specifies the test cases for **Module 2: Authentication & Authoriz
   - Message: `"Invalid email or password"`.
 - **Test Type:** Security / API
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -133,7 +133,7 @@ This document specifies the test cases for **Module 2: Authentication & Authoriz
   - Returns user ID, name, email, role. Password hash is absent.
 - **Test Type:** API / Integration
 - **Priority:** Medium
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -150,7 +150,7 @@ This document specifies the test cases for **Module 2: Authentication & Authoriz
   - Error: `"Authentication token required"`.
 - **Test Type:** Security
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -167,7 +167,7 @@ This document specifies the test cases for **Module 2: Authentication & Authoriz
   - Error: `"Access denied: insufficient permissions"`.
 - **Test Type:** Security
 - **Priority:** Critical
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -186,4 +186,30 @@ This document specifies the test cases for **Module 2: Authentication & Authoriz
   - Login returns valid admin JWT.
 - **Test Type:** Integration / Script
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
+
+---
+
+## 3. Test Execution Summary
+
+| Test Case ID | Test Description | Category | Result |
+| :--- | :--- | :--- | :--- |
+| `TC-M2-001` | Successful Customer Registration | API / Integration | **PASSED** |
+| `TC-M2-002` | Duplicate Email Registration Rejection | API / Security | **PASSED** |
+| `TC-M2-003` | Registration Payload Role Tampering (Privilege Escalation Prevention) | Security | **PASSED** |
+| `TC-M2-004` | Successful Customer Login | API / Integration | **PASSED** |
+| `TC-M2-005` | Login with Incorrect Password | Security / API | **PASSED** |
+| `TC-M2-006` | Authenticated Profile Retrieval (`GET /api/auth/me`) | API / Integration | **PASSED** |
+| `TC-M2-007` | Missing Authorization Header Rejection | Security | **PASSED** |
+| `TC-M2-008` | Role Guard Blocks Customer from Admin Route | Security / RBAC | **PASSED** |
+| `TC-M2-009` | Admin Seed Script Successfully Provisions Default Administrator | Integration / Script | **PASSED** |
+| `EC-M2-002` | Malformed Email Rejection | Validation | **PASSED** |
+| `EC-M2-003` | Weak Password Rejection | Validation | **PASSED** |
+| `EC-M2-006` | Non-Existent Email Generic Error (Enumeration Defense) | Security | **PASSED** |
+| `EC-M2-008` | Malformed or Forged Token Rejection | Security | **PASSED** |
+| `EC-M2-009` | Expired Token Rejection | Security | **PASSED** |
+| `EC-M2-011` | Inactive User Account Rejection | Security / Account State | **PASSED** |
+
+**Total Tests:** 15 | **Passed:** 15 | **Failed:** 0 | **Skipped:** 0
+**Execution Status:** ALL TESTS PASSED (100% Pass Rate)
+
