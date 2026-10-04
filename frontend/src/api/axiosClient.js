@@ -1,6 +1,7 @@
 import axios from 'axios';
+import { getDeviceId } from '../utils/deviceToken';
 
-const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
 const axiosClient = axios.create({
   baseURL,
@@ -10,10 +11,19 @@ const axiosClient = axios.create({
   }
 });
 
-// Request Interceptor
+// Request Interceptor: Attach JWT and x-device-id
 axiosClient.interceptors.request.use(
   (config) => {
-    // Standard request setup
+    const token = localStorage.getItem('fraudshield_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    const deviceId = getDeviceId();
+    if (deviceId) {
+      config.headers['x-device-id'] = deviceId;
+    }
+
     return config;
   },
   (error) => {
@@ -21,13 +31,13 @@ axiosClient.interceptors.request.use(
   }
 );
 
-// Response Interceptor
+// Response Interceptor: Handle unauthenticated responses (EC-M10-002) and format data
 axiosClient.interceptors.response.use(
   (response) => {
     return response.data;
   },
   (error) => {
-    // Format network / backend offline error
+    // Network or server offline
     if (!error.response) {
       return Promise.reject({
         success: false,
@@ -36,7 +46,21 @@ axiosClient.interceptors.response.use(
       });
     }
 
-    // Return backend error payload if available
+    // Auto-logout on 401 Unauthorized (except on login/register endpoints)
+    if (error.response.status === 401) {
+      const isAuthRoute =
+        error.config?.url?.includes('/auth/login') ||
+        error.config?.url?.includes('/auth/register');
+
+      if (!isAuthRoute) {
+        localStorage.removeItem('fraudshield_token');
+        localStorage.removeItem('fraudshield_user');
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login?expired=true';
+        }
+      }
+    }
+
     return Promise.reject(error.response.data || {
       success: false,
       message: error.message || 'An unexpected error occurred'
