@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Wallet = require('../models/Wallet');
 const walletService = require('./walletService');
 const deviceService = require('./deviceService');
+const alertService = require('./alertService');
 const { collectContext } = require('../engine/contextCollector');
 const { evaluateTransaction } = require('../engine/fraudEngine');
 
@@ -109,6 +110,25 @@ const initiateTransfer = async (senderId, recipientId, amount, note = '', device
   await transaction.save();
   await transaction.populate('senderId', 'name email');
   await transaction.populate('recipientId', 'name email');
+
+  // 8. Auto-generate alerts for suspicious transactions
+  if (transactionStatus === 'FLAGGED_FOR_REVIEW') {
+    await alertService.createAlert(
+      senderId,
+      transaction._id,
+      'MEDIUM',
+      'Transaction Held in Escrow for Review',
+      `Your transfer of ₹${numericAmount} to ${recipientUser.name} was flagged by security rules and is held in escrow pending analyst review.`
+    );
+  } else if (transactionStatus === 'BLOCKED') {
+    await alertService.createAlert(
+      senderId,
+      transaction._id,
+      'HIGH',
+      'Transaction Blocked Due to High Risk',
+      `Your transfer of ₹${numericAmount} to ${recipientUser.name} was blocked due to elevated security risk.`
+    );
+  }
 
   return {
     httpStatus,

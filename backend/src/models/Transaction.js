@@ -59,6 +59,22 @@ const transactionSchema = new mongoose.Schema(
       type: String,
       maxlength: [200, 'Note cannot exceed 200 characters'],
       trim: true
+    },
+    resolutionStatus: {
+      type: String,
+      enum: ['PENDING_REVIEW', 'APPROVED', 'REJECTED'],
+      default: 'PENDING_REVIEW'
+    },
+    resolutionNotes: {
+      type: String,
+      trim: true
+    },
+    resolvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    resolvedAt: {
+      type: Date
     }
   },
   {
