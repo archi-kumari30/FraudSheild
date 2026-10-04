@@ -7,6 +7,8 @@ const requestLogger = require('./middleware/requestLogger');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 const healthRoutes = require('./routes/healthRoutes');
 const authRoutes = require('./routes/authRoutes');
+const walletRoutes = require('./routes/walletRoutes');
+const beneficiaryRoutes = require('./routes/beneficiaryRoutes');
 const { authenticateToken, authorizeRole } = require('./middleware/authMiddleware');
 
 const createApp = () => {
@@ -58,6 +60,8 @@ const createApp = () => {
   // 6. Mount API Routes
   app.use('/api', healthRoutes);
   app.use('/api/auth', authRoutes);
+  app.use('/api/wallet', walletRoutes);
+  app.use('/api/beneficiaries', beneficiaryRoutes);
 
   // Simulated test routes for testing middleware in test environment
   if (config.nodeEnv === 'test') {

@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const walletService = require('../services/walletService');
 const { generateToken } = require('../utils/token');
 const { successResponse, errorResponse } = require('../utils/apiResponse');
 
@@ -28,6 +29,9 @@ const register = async (req, res, next) => {
     });
 
     await user.save();
+
+    // Automatically provision simulated INR wallet for customer
+    await walletService.createWallet(user._id);
 
     const token = generateToken(user);
 

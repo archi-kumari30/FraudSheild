@@ -8,7 +8,7 @@
 - **Module Name:** Wallet, Accounts & Beneficiaries
 - **Document Path:** `docs/test-cases/03-wallet-accounts-beneficiaries.md`
 - **Version:** 1.0.0
-- **Status:** Complete / Ready for Execution
+- **Status:** Complete / Executed & Passed
 - **Parent Documents (Sources of Truth):**
   - `docs/FraudShield_SRS.md`
   - `docs/context.md`
@@ -42,7 +42,7 @@ This document specifies the test cases for **Module 3: Wallet, Accounts & Benefi
   - `currency` equals `'INR'`.
 - **Test Type:** Integration
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -60,7 +60,7 @@ This document specifies the test cases for **Module 3: Wallet, Accounts & Benefi
   - Payload matches: `{ "success": true, "data": { "availableBalance": 10000, "heldBalance": 0, "currency": "INR" } }`
 - **Test Type:** API
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -79,7 +79,7 @@ This document specifies the test cases for **Module 3: Wallet, Accounts & Benefi
   - `heldBalance` remains `0`.
 - **Test Type:** API / Integration
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -97,7 +97,7 @@ This document specifies the test cases for **Module 3: Wallet, Accounts & Benefi
   - Balance remains unchanged.
 - **Test Type:** API / Security
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -115,7 +115,7 @@ This document specifies the test cases for **Module 3: Wallet, Accounts & Benefi
   - Response contains beneficiary record with `recipientAccountId`, `nickname`, and `createdAt` timestamp.
 - **Test Type:** API / Integration
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -132,7 +132,7 @@ This document specifies the test cases for **Module 3: Wallet, Accounts & Benefi
   - Error: `"Cannot add yourself as a beneficiary"`.
 - **Test Type:** Business Logic / Security
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -149,7 +149,7 @@ This document specifies the test cases for **Module 3: Wallet, Accounts & Benefi
   - Error: `"Beneficiary already added"`.
 - **Test Type:** API
 - **Priority:** Medium
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -167,4 +167,27 @@ This document specifies the test cases for **Module 3: Wallet, Accounts & Benefi
   - Beneficiary no longer returned in list.
 - **Test Type:** API
 - **Priority:** Medium
-- **Status:** Not Run
+- **Status:** Passed
+
+---
+
+## 3. Test Execution Summary
+
+| Test Case ID | Test Description | Category | Result |
+| :--- | :--- | :--- | :--- |
+| `TC-M3-001` | Automatic Wallet Provisioning on Customer Registration | Integration | **PASSED** |
+| `TC-M3-002` | Customer Retrieves Own Wallet Balances (`GET /api/wallet`) | API | **PASSED** |
+| `TC-M3-003` | Simulated Test Deposit Succeeds | API / Integration | **PASSED** |
+| `TC-M3-004` | Negative and Zero Deposit Rejection | API / Security | **PASSED** |
+| `TC-M3-005` | Add Valid Beneficiary | API / Integration | **PASSED** |
+| `TC-M3-006` | Self-Beneficiary Rejection | Business Logic / Security | **PASSED** |
+| `TC-M3-007` | Duplicate Beneficiary Rejection | API / Integrity | **PASSED** |
+| `TC-M3-008` | Delete Beneficiary | API / Address Book | **PASSED** |
+| `EC-M3-003` | Deposit Exceeding Max Limit Rejection | Validation | **PASSED** |
+| `EC-M3-006` | Adding Non-Existent User as Beneficiary Rejection | Validation / 404 | **PASSED** |
+| `EC-M3-009` | IDOR Protection - Cannot Delete Other User's Beneficiary | Security / IDOR | **PASSED** |
+| `EC-M3-010` | Concurrent Deposit Atomic Balance Calculation | Concurrency / Integrity | **PASSED** |
+
+**Total Tests:** 12 | **Passed:** 12 | **Failed:** 0 | **Skipped:** 0
+**Execution Status:** ALL TESTS PASSED (100% Pass Rate)
+
