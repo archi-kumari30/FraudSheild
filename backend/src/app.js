@@ -9,6 +9,8 @@ const healthRoutes = require('./routes/healthRoutes');
 const authRoutes = require('./routes/authRoutes');
 const walletRoutes = require('./routes/walletRoutes');
 const beneficiaryRoutes = require('./routes/beneficiaryRoutes');
+const deviceRoutes = require('./routes/deviceRoutes');
+const deviceContextMiddleware = require('./middleware/deviceContextMiddleware');
 const { authenticateToken, authorizeRole } = require('./middleware/authMiddleware');
 
 const createApp = () => {
@@ -36,8 +38,9 @@ const createApp = () => {
   app.use(express.json({ limit: '10kb' }));
   app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
-  // 4. Request Logging
+  // 4. Request Logging & Device Context Tracking
   app.use(requestLogger());
+  app.use(deviceContextMiddleware);
 
   // 5. Baseline IP Rate Limiting (Skipped in test environment)
   if (config.nodeEnv !== 'test') {
@@ -62,6 +65,7 @@ const createApp = () => {
   app.use('/api/auth', authRoutes);
   app.use('/api/wallet', walletRoutes);
   app.use('/api/beneficiaries', beneficiaryRoutes);
+  app.use('/api/devices', deviceRoutes);
 
   // Simulated test routes for testing middleware in test environment
   if (config.nodeEnv === 'test') {
@@ -73,6 +77,9 @@ const createApp = () => {
     });
     app.get('/api/test-admin', authenticateToken, authorizeRole(['admin']), (req, res) => {
       res.status(200).json({ success: true, message: 'Admin access granted' });
+    });
+    app.get('/api/test-device-context', (req, res) => {
+      res.status(200).json({ success: true, deviceContext: req.deviceContext });
     });
   }
 
