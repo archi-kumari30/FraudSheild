@@ -1,5 +1,6 @@
 const express = require('express');
 const reviewController = require('../controllers/reviewController');
+const aiController = require('../controllers/aiController');
 const { authenticateToken, authorizeRole } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -11,5 +12,6 @@ router.use(authorizeRole(['admin']));
 router.get('/', reviewController.getPendingReviews);
 router.get('/:id', reviewController.getReviewDetails);
 router.post('/:id/resolve', reviewController.resolveReview);
+router.post('/:id/ai-analyze', aiController.analyzeTransaction);
 
 module.exports = router;

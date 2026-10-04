@@ -75,6 +75,13 @@ const transactionSchema = new mongoose.Schema(
     },
     resolvedAt: {
       type: Date
+    },
+    aiInvestigation: {
+      caseSummary: { type: String },
+      riskPatterns: [{ type: String }],
+      investigationChecklist: [{ type: String }],
+      isFallback: { type: Boolean, default: false },
+      analyzedAt: { type: Date }
     }
   },
   {
