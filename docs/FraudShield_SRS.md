@@ -10,6 +10,7 @@
 - **Author:** Antigravity AI & Architecture Team
 - **Approved By:** Project Stakeholder
 - **Target Stack:** MERN Stack (MongoDB, Express.js, React, Node.js) + Google Gemini API
+- **GitHub Repository:** https://github.com/archi-kumari30/FraudSheild
 
 ---
 
@@ -20,6 +21,11 @@
 Unlike black-box machine learning systems that can introduce opacity and non-deterministic behavior into high-stakes financial decisions, FraudShield employs a high-performance **rule-based fraud detection and risk scoring engine**. Every transaction is systematically evaluated against a predefined suite of heuristic and behavioral fraud rules, generating a deterministic numerical risk score, an associated risk tier, and an explicit list of triggered fraud indicators.
 
 To augment operational efficiency without compromising regulatory auditability, FraudShield integrates **Google Gemini AI** strictly as an **AI Fraud Investigation Assistant**. Gemini acts as an intelligent co-pilot for fraud analysts—synthesizing alert narratives, deciphering rule combinations into plain-English case summaries, suggesting contextual investigative questions, and accelerating manual review triage. Crucially, the deterministic backend fraud engine retains absolute, sovereign decision-making authority.
+
+### 1.1 Project Repository
+
+**GitHub Repository:**
+https://github.com/archi-kumari30/FraudSheild
 
 ---
 
