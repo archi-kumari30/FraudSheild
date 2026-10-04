@@ -5,7 +5,10 @@ import RegisterPage from '../pages/customer/RegisterPage';
 import DashboardPage from '../pages/customer/DashboardPage';
 import BeneficiariesPage from '../pages/customer/BeneficiariesPage';
 import TransactionsPage from '../pages/customer/TransactionsPage';
+import AdminDashboardPage from '../pages/admin/AdminDashboardPage';
+import AuditLogsPage from '../pages/admin/AuditLogsPage';
 import ProtectedRoute from './ProtectedRoute';
+import AdminRoute from './AdminRoute';
 import { useAuth } from '../context/AuthContext';
 
 const AppRoutes = () => {
@@ -61,7 +64,29 @@ const AppRoutes = () => {
         }
       />
 
-      {/* Default redirect */}
+      {/* Admin Protected Routes */}
+      <Route
+        path="/admin/reviews"
+        element={
+          <AdminRoute>
+            <AdminDashboardPage />
+          </AdminRoute>
+        }
+      />
+      <Route
+        path="/admin/dashboard"
+        element={<Navigate to="/admin/reviews" replace />}
+      />
+      <Route
+        path="/admin/audit-logs"
+        element={
+          <AdminRoute>
+            <AuditLogsPage />
+          </AdminRoute>
+        }
+      />
+
+      {/* Default route redirect */}
       <Route
         path="/"
         element={
@@ -72,7 +97,7 @@ const AppRoutes = () => {
         }
       />
 
-      {/* 404 fallback */}
+      {/* Catch-all 404 */}
       <Route
         path="*"
         element={
