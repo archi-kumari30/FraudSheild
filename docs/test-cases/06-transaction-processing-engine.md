@@ -8,7 +8,7 @@
 - **Module Name:** Transaction Processing Engine
 - **Document Path:** `docs/test-cases/06-transaction-processing-engine.md`
 - **Version:** 1.0.0
-- **Status:** Complete / Ready for Execution
+- **Status:** Complete / Executed & Passed
 - **Parent Documents (Sources of Truth):**
   - `docs/FraudShield_SRS.md`
   - `docs/context.md`
@@ -46,7 +46,7 @@ This document specifies the integration and API test cases for **Module 6: Trans
   - Recipient `availableBalance` is `6000` (₹6,000).
 - **Test Type:** API / Integration
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -70,7 +70,7 @@ This document specifies the integration and API test cases for **Module 6: Trans
   - Recipient `availableBalance` remains `5000` (untouched).
 - **Test Type:** API / Integration
 - **Priority:** Critical
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -92,7 +92,7 @@ This document specifies the integration and API test cases for **Module 6: Trans
   - Sender `heldBalance` remains `0`.
 - **Test Type:** API / Security
 - **Priority:** Critical
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -110,7 +110,7 @@ This document specifies the integration and API test cases for **Module 6: Trans
   - Zero database mutations.
 - **Test Type:** API / Validation
 - **Priority:** High
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -130,7 +130,7 @@ This document specifies the integration and API test cases for **Module 6: Trans
   - Sender `availableBalance` equals `2000` (never drops below 0).
 - **Test Type:** Security / Concurrency
 - **Priority:** Critical
-- **Status:** Not Run
+- **Status:** Passed
 
 ---
 
@@ -148,4 +148,21 @@ This document specifies the integration and API test cases for **Module 6: Trans
   - Internal rule weights and scoring formulas are masked from customer view.
 - **Test Type:** API
 - **Priority:** Medium
-- **Status:** Not Run
+- **Status:** Passed
+
+---
+
+## 3. Test Execution Summary
+
+| Test Case ID | Test Description | Category | Result |
+| :--- | :--- | :--- | :--- |
+| `TC-M6-001` | Low-Risk Transaction Executes Immediately (`LOW` -> `APPROVED`) | API / Balance Settlement | **PASSED** |
+| `TC-M6-002` | Medium-Risk Transaction Places Funds in Escrow (`MEDIUM` -> `FLAGGED`) | API / Escrow Hold | **PASSED** |
+| `TC-M6-003` | High-Risk Transaction Is Immediately Blocked (`HIGH` -> `BLOCKED`) | API / Security | **PASSED** |
+| `TC-M6-004` | Insufficient Balance Rejection | Validation / Balance Guard | **PASSED** |
+| `TC-M6-005` | Concurrent Double-Spend Prevention Test | Concurrency / Double Spend | **PASSED** |
+| `TC-M6-006` | Customer Queries Own Transaction History | API / History | **PASSED** |
+
+**Total Tests:** 6 | **Passed:** 6 | **Failed:** 0 | **Skipped:** 0
+**Execution Status:** ALL TESTS PASSED (100% Pass Rate)
+

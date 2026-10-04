@@ -62,7 +62,6 @@ const depositFunds = async (userId, amount) => {
     throw error;
   }
 
-  // Round to 2 decimal places to avoid floating point precision leaks
   const roundedAmount = Math.round(numericAmount * 100) / 100;
 
   const wallet = await Wallet.findOneAndUpdate(
@@ -74,8 +73,129 @@ const depositFunds = async (userId, amount) => {
   return wallet;
 };
 
+/**
+ * Execute an approved direct transfer between sender and recipient
+ * @param {string|ObjectId} senderId
+ * @param {string|ObjectId} recipientId
+ * @param {number} amount
+ * @returns {Promise<Object>}
+ */
+const executeApprovedTransfer = async (senderId, recipientId, amount) => {
+  const roundedAmount = Math.round(Number(amount) * 100) / 100;
+
+  // Atomically debit sender verifying availableBalance >= roundedAmount
+  const senderWallet = await Wallet.findOneAndUpdate(
+    { userId: senderId, availableBalance: { $gte: roundedAmount } },
+    { $inc: { availableBalance: -roundedAmount } },
+    { new: true }
+  );
+
+  if (!senderWallet) {
+    const error = new Error('Insufficient available balance');
+    error.status = 400;
+    error.code = 'INSUFFICIENT_BALANCE';
+    throw error;
+  }
+
+  // Atomically credit recipient
+  const recipientWallet = await Wallet.findOneAndUpdate(
+    { userId: recipientId },
+    { $inc: { availableBalance: roundedAmount } },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
+
+  return { senderWallet, recipientWallet };
+};
+
+/**
+ * Execute an escrow hold (reserve funds) for a flagged transaction
+ * @param {string|ObjectId} senderId
+ * @param {number} amount
+ * @returns {Promise<Wallet>}
+ */
+const executeEscrowHold = async (senderId, amount) => {
+  const roundedAmount = Math.round(Number(amount) * 100) / 100;
+
+  // Atomically transfer from availableBalance to heldBalance
+  const senderWallet = await Wallet.findOneAndUpdate(
+    { userId: senderId, availableBalance: { $gte: roundedAmount } },
+    { $inc: { availableBalance: -roundedAmount, heldBalance: roundedAmount } },
+    { new: true }
+  );
+
+  if (!senderWallet) {
+    const error = new Error('Insufficient available balance');
+    error.status = 400;
+    error.code = 'INSUFFICIENT_BALANCE';
+    throw error;
+  }
+
+  return senderWallet;
+};
+
+/**
+ * Release escrow funds and settle to recipient (analyst approval)
+ * @param {string|ObjectId} senderId
+ * @param {string|ObjectId} recipientId
+ * @param {number} amount
+ * @returns {Promise<Object>}
+ */
+const releaseEscrowAndSettle = async (senderId, recipientId, amount) => {
+  const roundedAmount = Math.round(Number(amount) * 100) / 100;
+
+  const senderWallet = await Wallet.findOneAndUpdate(
+    { userId: senderId, heldBalance: { $gte: roundedAmount } },
+    { $inc: { heldBalance: -roundedAmount } },
+    { new: true }
+  );
+
+  if (!senderWallet) {
+    const error = new Error('Insufficient held escrow balance');
+    error.status = 400;
+    error.code = 'INSUFFICIENT_HELD_BALANCE';
+    throw error;
+  }
+
+  const recipientWallet = await Wallet.findOneAndUpdate(
+    { userId: recipientId },
+    { $inc: { availableBalance: roundedAmount } },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
+
+  return { senderWallet, recipientWallet };
+};
+
+/**
+ * Release escrow hold and refund back to sender (analyst rejection)
+ * @param {string|ObjectId} senderId
+ * @param {number} amount
+ * @returns {Promise<Wallet>}
+ */
+const refundEscrow = async (senderId, amount) => {
+  const roundedAmount = Math.round(Number(amount) * 100) / 100;
+
+  const senderWallet = await Wallet.findOneAndUpdate(
+    { userId: senderId, heldBalance: { $gte: roundedAmount } },
+    { $inc: { heldBalance: -roundedAmount, availableBalance: roundedAmount } },
+    { new: true }
+  );
+
+  if (!senderWallet) {
+    const error = new Error('Insufficient held escrow balance');
+    error.status = 400;
+    error.code = 'INSUFFICIENT_HELD_BALANCE';
+    throw error;
+  }
+
+  return senderWallet;
+};
+
 module.exports = {
   createWallet,
   getWallet,
-  depositFunds
+  depositFunds,
+  executeApprovedTransfer,
+  executeEscrowHold,
+  releaseEscrowAndSettle,
+  refundEscrow
 };
