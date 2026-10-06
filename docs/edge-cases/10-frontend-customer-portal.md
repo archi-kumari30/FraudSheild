@@ -58,12 +58,12 @@ This document specifies the technical, user interface, and state management edge
 
 ---
 
-### EC-M10-004: Rendering `FLAGGED_FOR_REVIEW` Outcome with Escrow Notice
+### EC-M10-004: Rendering `CUSTOMER_VERIFICATION_REQUIRED` Outcome with Escrow Notice
 - **ID:** `EC-M10-004`
 - **Scenario:** A customer initiates a transfer that lands in medium risk (held in escrow).
-- **Preconditions:** API returns HTTP 202 with `status: "FLAGGED_FOR_REVIEW"`.
-- **Expected System Behavior:** Modal displays an informative amber security badge: *"Your transfer of ₹XX,XXX is undergoing standard security review. Your funds are temporarily reserved in escrow and will be settled shortly."* Available balance drops, and held balance increments immediately.
-- **Handling / Mitigation:** Component checks `response.data.status === 'FLAGGED_FOR_REVIEW'`, updates balances in `AuthContext`, and renders clear explanation without leaking internal rule scores.
+- **Preconditions:** API returns HTTP 202 with `status: "CUSTOMER_VERIFICATION_REQUIRED"`.
+- **Expected System Behavior:** Modal displays an informative amber security badge: *"Your transfer of ₹XX,XXX requires verification. Your funds are temporarily held in escrow. Please confirm this payment to proceed, or report if unauthorized."* Available balance drops, and held balance increments immediately. Options to "Confirm Payment" or "I Didn't Initiate This" are rendered.
+- **Handling / Mitigation:** Component checks `response.data.status === 'CUSTOMER_VERIFICATION_REQUIRED'`, updates balances in `AuthContext`, and renders clear confirmation and escalation actions without leaking internal rule scores.
 - **Priority:** High
 - **Security Impact:** Clear user communication while maintaining internal scoring opacity.
 
@@ -99,3 +99,19 @@ This document specifies the technical, user interface, and state management edge
 - **Handling / Mitigation:** Explicit checks for `items.length === 0` rendering empty state cards.
 - **Priority:** Low
 - **Security Impact:** Polished user experience.
+
+---
+
+### EC-M10-008: Customer Confirmation and Escalation from Transactions List
+- **ID:** `EC-M10-008`
+- **Scenario:** Customer views the Transactions page and interacts with a payment awaiting verification.
+- **Preconditions:** Transaction has `status === 'CUSTOMER_VERIFICATION_REQUIRED'`.
+- **Expected System Behavior:**
+  - Clicking "Confirm Payment" triggers `POST /api/transactions/:id/confirm`.
+  - Button exhibits a loading spinner and disables (`isConfirming = true`) to prevent double-clicks.
+  - On approval: balances refresh, status becomes `APPROVED`, success notice displayed.
+  - On elevation to high-risk: balances refresh, `heldBalance` returned to `availableBalance`, recipient receives ₹0, blocked notice displayed.
+  - Clicking "I Didn't Initiate This" triggers `POST /api/transactions/:id/escalate`, transitions status to `FLAGGED_FOR_REVIEW`, and displays notice that it was sent to fraud analysts.
+- **Handling / Mitigation:** Async state guards, loading indicators, and optimistic/reactive balance synchronization.
+- **Priority:** High
+- **Security Impact:** Clean user experience and fraud reporting integration.

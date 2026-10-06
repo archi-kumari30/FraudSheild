@@ -339,7 +339,7 @@ FraudShield/
     4. Invoke Fraud Engine synchronously.
     5. Execute atomic wallet mutation based on decision:
        - `LOW` (Approve): Debit sender `availableBalance`, credit recipient `availableBalance`, status = `APPROVED`.
-       - `MEDIUM` (Review): Debit sender `availableBalance`, credit sender `heldBalance`, recipient unchanged, status = `FLAGGED_FOR_REVIEW`.
+       - `MEDIUM` (Verify): Debit sender `availableBalance`, credit sender `heldBalance`, recipient unchanged, status = `CUSTOMER_VERIFICATION_REQUIRED`. Customer prompted to self-verify ("Confirm Payment") or escalate ("I Didn't Initiate This").
        - `HIGH` (Block): No balance deductions, status = `BLOCKED`.
 - **Frontend Work:** Data contracts established; UI implemented in Module 10.
 - **Database Work:**
@@ -349,6 +349,8 @@ FraudShield/
   - `POST /api/transactions` (Initiate simulated transfer).
   - `GET /api/transactions` (Customer gets own transaction history).
   - `GET /api/transactions/:id` (Get transaction details).
+  - `POST /api/transactions/:id/confirm` (Customer confirms payment: atomic lock, pre-settlement fraud re-evaluation, settles to `APPROVED` or blocks to `BLOCKED` with refund).
+  - `POST /api/transactions/:id/escalate` (Customer reports unauthorized payment: transitions to `FLAGGED_FOR_REVIEW` for admin investigation).
 - **Business Logic:**
   - Prevent double-spending: held funds are locked in `heldBalance` immediately.
   - Self-transfers strictly rejected.
@@ -358,16 +360,17 @@ FraudShield/
   - Customer API responses must never expose specific internal fraud point scores or rule thresholds.
 - **Testing Scope:**
   - Low-risk transaction executes immediately and updates sender and recipient balances.
-  - Medium-risk transaction places funds in escrow (`heldBalance`) and marks status `FLAGGED_FOR_REVIEW`.
+  - Medium-risk transaction places funds in escrow (`heldBalance`) and marks status `CUSTOMER_VERIFICATION_REQUIRED`.
+  - Customer confirmation settles escrow to recipient; escalation moves to `FLAGGED_FOR_REVIEW`.
   - High-risk transaction rejects execution, zero balance deducted, marks status `BLOCKED`.
   - Concurrency tests verifying balance cannot be overdrawn.
-- **Completion Criteria:** Transaction processing flows (Approve, Review, Block) verified with database balance consistency verified.
+- **Completion Criteria:** Transaction processing flows (Approve, Verify/Escalate, Block) verified with database balance consistency verified.
 
 ---
 
 ### Module 7 — Fraud Alert & Incident Review System
 
-- **Objective:** Manage security alerts for flagged and blocked transactions, provide Admins with an investigation queue, and execute manual review determinations (`APPROVE` or `REJECT`) with escrow settlement.
+- **Objective:** Manage security alerts for flagged and blocked transactions, provide Admins with an investigation queue for escalated cases (`FLAGGED_FOR_REVIEW`), and execute manual review determinations (`APPROVE` or `REJECT`) with escrow settlement.
 - **Dependencies:** Module 6 (Transaction Processing Engine).
 - **Backend Work:**
   - Implement Alert model (`userId`, `transactionId`, `severity`, `title`, `message`, `isRead`).
@@ -387,7 +390,7 @@ FraudShield/
   - `GET /api/admin/reviews/:id` (Admin inspects detailed case).
   - `POST /api/admin/reviews/:id/resolve` (Admin submits approve/reject determination).
 - **Business Logic:**
-  - Only transactions in `FLAGGED_FOR_REVIEW` status can be resolved.
+  - Only transactions in `FLAGGED_FOR_REVIEW` status (escalated by customer) can be resolved.
   - Once resolved, a transaction state is immutable (cannot be re-resolved).
   - Accurate fund settlement upon resolution ensures zero fund loss or leakage.
 - **Security Considerations:**
@@ -484,8 +487,8 @@ FraudShield/
     - Wallet Card: Display `availableBalance`, `heldBalance`, and "Add Funds / Deposit" modal.
     - Send Money Form / Modal: Recipient selection from beneficiaries or manual account ID, amount input, submit action with confirmation.
     - Beneficiary Manager: Add, list, and delete saved beneficiaries.
-    - Transaction History Table: Visual status badges (`APPROVED` = Green, `FLAGGED_FOR_REVIEW` = Amber, `BLOCKED` = Red), date, amount, recipient.
-    - Fraud Alerts Panel: Customer notifications detailing held or blocked transactions with clear guidance.
+    - Transaction History Table: Visual status badges (`APPROVED` = Green, `CUSTOMER_VERIFICATION_REQUIRED` = Amber, `FLAGGED_FOR_REVIEW` = Orange, `BLOCKED` = Red), date, amount, recipient, with inline self-verification ("Confirm Payment") and escalation actions.
+    - Fraud Alerts Panel: Customer notifications detailing verification-required, held, or blocked transactions with clear guidance.
   - State management: React Context for Auth and Notifications; Axios interceptors attaching JWT and `x-device-id`.
 - **Backend Work:** None (consumes existing APIs).
 - **Database Work:** None.
@@ -512,7 +515,7 @@ FraudShield/
   - Admin Route Guards: Verify authenticated user has `role === 'admin'`.
   - Admin Navigation Layout: Header, queue badge counter, audit logs link.
   - Incident & Review Queue:
-    - Live table of transactions in `FLAGGED_FOR_REVIEW` and `BLOCKED` status.
+    - Live table of escalated transactions in `FLAGGED_FOR_REVIEW` and blocked transactions in `BLOCKED` status.
     - Color-coded Risk Badges (`LOW`, `MEDIUM`, `HIGH`).
   - Case Detail Inspection Modal / View:
     - Triggered rules breakdown table (rule name, weight, reason).
@@ -617,17 +620,15 @@ Testing is conducted at three distinct levels:
 
 ### 6.3 Level 3: End-to-End Workflow Testing
 - **Comprehensive E2E Scenario:**
-  1. Customer A registers and receives ₹10,000 initial simulated balance.
+  1. Customer A registers and receives initial simulated balance.
   2. Customer B registers.
   3. Customer A adds Customer B as a beneficiary.
-  4. Customer A initiates transfer of ₹15,000 to Customer B (triggers `RULE_BENEFICIARY_NEW` +30, lands in `FLAGGED_FOR_REVIEW`).
+  4. Customer A initiates transfer of ₹15,000 to Customer B (triggers `RULE_BENEFICIARY_NEW` +30 and new device +25, score 55, lands in `CUSTOMER_VERIFICATION_REQUIRED`).
   5. System verifies Customer A's `availableBalance` is reduced and ₹15,000 is placed in `heldBalance`. Customer B's balance is unchanged.
-  6. Customer A receives in-app alert that transaction is under review.
-  7. Admin logs in and views transaction in Review Queue.
-  8. Admin requests on-demand Gemini analysis; receives structured summary and checklist.
-  9. Admin submits Manual Approve with notes.
-  10. System verifies Customer A's `heldBalance` is debited and Customer B's `availableBalance` is credited.
-  11. System verifies complete action is permanently recorded in `AuditLog`.
+  6. Customer A receives in-app alert that payment verification is required.
+  7. **Pathway A (Customer Self-Verification):** Customer A clicks "Confirm Payment" -> atomic lock acquired -> pre-settlement fraud rules re-evaluated -> transitions to `APPROVED` -> transfers ₹15,000 from Customer A's `heldBalance` to Customer B's `availableBalance`.
+  8. **Pathway B (Customer Escalation):** Customer A clicks "I Didn't Initiate This" -> transitions to `FLAGGED_FOR_REVIEW`. Admin views transaction in Review Queue, optionally requests Gemini analysis, and submits Manual Approve (settles to recipient) or Manual Reject (refunds Customer A's `heldBalance` to `availableBalance`).
+  9. System verifies complete action is permanently recorded in `AuditLog`.
 
 ---
 
@@ -689,3 +690,32 @@ The following operational details have been pre-aligned with the approved SRS an
 | **Escrow Hold Mechanics** | Dual-balance model: `availableBalance` and `heldBalance` preventing double-spending during review. | `[Approved in SRS/Context]` |
 
 > **Note on Approvals:** All core business rules, roles, fraud rules, risk thresholds, and escrow behaviors are ratified in `docs/FraudShield_SRS.md` and `docs/context.md`. There are currently **zero pending architectural ambiguities**.
+
+---
+
+## 11. Real-World Product Experience & SOC UX Architecture
+
+To ensure FraudShield functions and feels like a realistic financial security platform ready for high-stakes technical demonstration:
+
+1. **Balanced Security Design System:**
+   - Deep navy canvas (`#0A1128`), surface card components (`#111C38`), dark interactive sub-elements (`#0B132B`).
+   - Clean slate borders (`border-slate-800`), high-contrast typography (`text-slate-100`, `text-slate-300`, `text-slate-400`).
+   - Security color mapping: Emerald/teal for low risk and approved states, amber for medium risk and escrow holds, rose for high risk and blocked transactions.
+   - Zero emojis permitted; Lucide icons provide uniform, enterprise-grade visual affordances.
+
+2. **Public Landing Page Experience (`/`):**
+   - High-impact explanation of why deterministic fraud prevention protects financial networks.
+   - Interactive 4-step processing pipeline: Transaction Submission $\rightarrow$ Context Aggregation $\rightarrow$ Parallel Rule Execution $\rightarrow$ Decision Routing.
+   - Realistic transaction scenario demonstrations (e.g. ₹50,000 High Risk Block vs ₹2,000 Low Risk Immediate Settlement).
+
+3. **Customer Banking Portal:**
+   - Multi-step transfer wizard with real-time "Transaction Security Check" breakdown displaying amount, risk score, tier, and triggered reasons directly from the backend fraud engine.
+   - Comprehensive escrow ledger detailing funds locked in `heldBalance` awaiting SOC resolution.
+   - Self-service password recovery flow (`/forgot-password`, `/reset-password/:token`).
+
+4. **Security Operations Center (SOC) Administration:**
+   - Live triage queue with human-in-the-loop review actions (`APPROVE` with fund release, `REJECT` with refund).
+   - Mandatory analyst notes validation ($\ge 10$ characters) saved immutably to audit logs.
+   - Deterministic Security Rules Matrix (`/admin/rules`) displaying all 6 heuristic rules, weights, and mathematical boundaries.
+   - Gemini AI Co-Pilot safeguards documentation (`/admin/ai-assistant`) and on-demand triage briefings.
+

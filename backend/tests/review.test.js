@@ -71,12 +71,18 @@ describe('Module 7: Fraud Alert & Incident Review Tests', () => {
       .set('Authorization', `Bearer ${sender.token}`)
       .send({ recipientEmail: 'recipient.review@test.com', nickname: 'Review Beneficiary' });
 
-    // Post transaction from new device
+    // Post transaction from new device (receives CUSTOMER_VERIFICATION_REQUIRED)
     const txRes = await request(app)
       .post('/api/transactions')
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', 'flagged-device-x')
       .send({ recipientId, amount: transferAmount, note: 'Payment under review' });
+
+    // Escalate to admin review queue for investigation
+    await request(app)
+      .post(`/api/transactions/${txRes.body.data.transaction._id}/escalate`)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .send({ reason: 'Customer reported suspicious transaction' });
 
     return {
       sender,

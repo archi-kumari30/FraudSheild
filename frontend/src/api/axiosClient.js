@@ -41,7 +41,8 @@ axiosClient.interceptors.response.use(
     if (!error.response) {
       return Promise.reject({
         success: false,
-        isNetworkError: true,
+        status: 0,
+        code: 'NETWORK_ERROR',
         message: 'Unable to connect to FraudShield server. Please ensure the backend is running.'
       });
     }
@@ -61,9 +62,20 @@ axiosClient.interceptors.response.use(
       }
     }
 
-    return Promise.reject(error.response.data || {
+    const resData = error.response.data;
+    const message =
+      resData?.error?.message ||
+      resData?.message ||
+      error.message ||
+      'An unexpected error occurred';
+    const code = resData?.error?.code || resData?.code || 'ERROR';
+
+    return Promise.reject({
       success: false,
-      message: error.message || 'An unexpected error occurred'
+      status: error.response.status,
+      message,
+      code,
+      data: resData
     });
   }
 );

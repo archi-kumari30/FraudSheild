@@ -18,7 +18,7 @@
 
 ## 1. Module Objective
 
-The objective of **Module 7 (Fraud Alert & Incident Review System)** is to provide alerting capabilities for suspicious activity, establish the Admin Review Queue for transactions marked `FLAGGED_FOR_REVIEW`, and execute human-in-the-loop manual determinations (`APPROVE` or `REJECT`) with final escrow fund settlement.
+The objective of **Module 7 (Fraud Alert & Incident Review System)** is to provide alerting capabilities for suspicious activity, establish the Admin Review Queue for transactions marked `FLAGGED_FOR_REVIEW` (escalated when a customer reports unauthorized activity), and execute human-in-the-loop manual determinations (`APPROVE` or `REJECT`) with final escrow fund settlement. Normal medium-risk transactions undergo customer self-verification and do not require 24/7 admin availability.
 
 ---
 
@@ -26,7 +26,7 @@ The objective of **Module 7 (Fraud Alert & Incident Review System)** is to provi
 
 ### In-Scope:
 - Alert model and schema storing notifications for customers and internal monitoring.
-- Automated alert generation when transactions are classified as `FLAGGED_FOR_REVIEW` or `BLOCKED`.
+- Automated alert generation when transactions are classified as `CUSTOMER_VERIFICATION_REQUIRED`, `FLAGGED_FOR_REVIEW`, or `BLOCKED`.
 - Customer alerts API:
   - `GET /api/alerts`: List alerts for authenticated customer.
   - `PATCH /api/alerts/:id/read`: Mark alert as read.
@@ -107,7 +107,7 @@ The objective of **Module 7 (Fraud Alert & Incident Review System)** is to provi
 | :--- | :--- | :---: | :--- |
 | `GET` | `/api/alerts` | Customer | Lists alerts for the logged-in user. |
 | `PATCH` | `/api/alerts/:id/read` | Customer | Marks a specific alert as read. |
-| `GET` | `/api/admin/reviews` | Admin Only | Lists transactions currently in `FLAGGED_FOR_REVIEW` status. |
+| `GET` | `/api/admin/reviews` | Admin Only | Lists escalated transactions currently in `FLAGGED_FOR_REVIEW` status. |
 | `GET` | `/api/admin/reviews/:id` | Admin Only | Inspects complete case file (rule breakdown, device info, amounts). |
 | `POST` | `/api/admin/reviews/:id/resolve` | Admin Only | Submits human review verdict (`APPROVE` or `REJECT`) with notes. |
 
@@ -183,7 +183,7 @@ backend/
 
 ## 14. Completion Criteria
 
-1. Transactions in `FLAGGED_FOR_REVIEW` or `BLOCKED` auto-generate corresponding alerts.
+1. Transactions in `CUSTOMER_VERIFICATION_REQUIRED`, `FLAGGED_FOR_REVIEW`, or `BLOCKED` auto-generate corresponding alerts.
 2. Customer can query their own alerts; marking as read updates database.
 3. Admin can view the list of pending review cases; customers are rejected with HTTP 403.
 4. Admin can inspect case details with complete triggered rule names and points.

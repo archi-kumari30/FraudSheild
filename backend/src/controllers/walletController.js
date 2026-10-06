@@ -10,6 +10,13 @@ const getWallet = async (req, res, next) => {
     const wallet = await walletService.getWallet(req.user._id);
 
     return successResponse(res, 200, 'Wallet retrieved successfully', {
+      wallet: {
+        _id: wallet._id,
+        userId: wallet.userId,
+        availableBalance: wallet.availableBalance,
+        heldBalance: wallet.heldBalance,
+        currency: wallet.currency
+      },
       availableBalance: wallet.availableBalance,
       heldBalance: wallet.heldBalance,
       currency: wallet.currency
@@ -39,6 +46,13 @@ const depositFunds = async (req, res, next) => {
     const wallet = await walletService.depositFunds(req.user._id, amount);
 
     return successResponse(res, 200, 'Deposit successful', {
+      wallet: {
+        _id: wallet._id,
+        userId: wallet.userId,
+        availableBalance: wallet.availableBalance,
+        heldBalance: wallet.heldBalance,
+        currency: wallet.currency
+      },
       availableBalance: wallet.availableBalance,
       heldBalance: wallet.heldBalance,
       currency: wallet.currency

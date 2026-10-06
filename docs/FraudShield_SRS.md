@@ -55,7 +55,7 @@ The primary engineering and operational objectives of FraudShield are:
 2. **Sub-Second Latency:** Complete full rule evaluation, risk score synthesis, and decision assignment within milliseconds during transaction ingestion.
 3. **Tri-Tier Transaction Lifecycle:** Accurately classify every transaction into one of three deterministic actions:
    - `APPROVE` (Low Risk: execute payment immediately)
-   - `REVIEW` / `FLAGGED` (Medium Risk: hold funds in escrow for analyst investigation)
+   - `VERIFICATION / ESCROW` (Medium Risk: hold funds in escrow; customer self-verification with backend re-screening, or escalate to analyst upon customer reporting unauthorized activity)
    - `BLOCK` / `REJECT` (High Risk: prevent execution immediately and safeguard account)
 4. **AI-Assisted Operational Intelligence:** Leverage Gemini AI strictly on-demand to produce plain-language case summaries, root-cause explanations, and recommended investigative checklists for fraud analysts without granting AI any decision authority.
 5. **Robust Resiliency & Fail-Safe Architecture:** Ensure that 100% of payment evaluation and core banking capabilities remain fully operational if Gemini API is degraded, rate-limited, or unreachable.
@@ -90,8 +90,8 @@ The initial production-ready version (v1.0) of FraudShield encompasses the follo
   - Registry of known devices per customer account.
 - **Payment & Transaction Engine:**
   - Initiation of peer-to-peer / digital wallet transfer transactions in Indian Rupees (INR / ₹).
-  - Atomic transaction state management (`PENDING`, `APPROVED`, `FLAGGED_FOR_REVIEW`, `BLOCKED`, `REJECTED`).
-  - Escrow hold mechanism: funds are placed on hold in `heldBalance` when a transaction is flagged for review.
+  - Atomic transaction state management (`PENDING`, `APPROVED`, `CUSTOMER_VERIFICATION_REQUIRED`, `FLAGGED_FOR_REVIEW`, `BLOCKED`, `REJECTED`).
+  - Escrow hold mechanism: funds are placed on hold in `heldBalance` when a transaction requires customer verification or is escalated for review.
 - **Rule-Based Fraud Detection & Risk Scoring Engine:**
   - 6 approved deterministic fraud rules evaluated synchronously on transaction creation.
   - Calculation of normalized composite Risk Score (0 to 100) using $\min(\text{totalRuleScore}, 100)$.
@@ -194,6 +194,8 @@ FraudShield strictly enforces **2 user roles**:
 - **FR-AUTH-03:** The system shall authenticate users via email and password, issuing a stateless JSON Web Token (JWT) containing user ID, role (`customer` or `admin`), and expiration timestamp.
 - **FR-AUTH-04:** The system shall restrict endpoint access based strictly on user role (`customer` vs `admin`).
 - **FR-AUTH-05:** The system shall allow users to retrieve and update their personal profile details (excluding balance and role).
+- **FR-AUTH-06:** The system shall support secure password recovery via `/api/auth/forgot-password` and `/api/auth/reset-password`. Password reset tokens must be cryptographically generated (32-byte hex), hashed with SHA-256 before database persistence, and bounded by a 15-minute expiration window.
+- **FR-AUTH-07:** The administrative system shall provide aggregated queue metrics (`/api/admin/reviews/stats`) reporting pending reviews, total screened transfers, settled clean, blocked risk, and active accounts.
 
 ### 7.2 Module: Simulated Digital Wallet & Beneficiary Management
 - **FR-WAL-01:** Upon registration, each customer shall be automatically provisioned an internal simulated digital wallet.
@@ -223,10 +225,12 @@ FraudShield strictly enforces **2 user roles**:
     - Sender's `availableBalance` is debited by amount.
     - Recipient's `availableBalance` is credited by amount.
   - **If Risk Level = `MEDIUM` (Score 31–70):**
-    - Status: `FLAGGED_FOR_REVIEW`.
+    - Status: `CUSTOMER_VERIFICATION_REQUIRED`.
     - Escrow Hold: Sender's `availableBalance` is debited by amount, and `heldBalance` is credited by amount.
-    - Recipient balance is NOT modified.
-    - Transaction is enqueued in the Admin Review Queue.
+    - Recipient balance is NOT modified (recipient receives ₹0).
+    - Transaction does NOT require 24/7 admin availability and is NOT enqueued directly to Admin Review.
+    - Customer is prompted to verify initiation via `POST /api/transactions/:id/confirm`. Upon confirmation and fresh security re-evaluation, acceptable transactions settle to `APPROVED` (held balance released to recipient); if elevated to HIGH, transaction is `BLOCKED` and escrow refunded to sender.
+    - If customer reports unauthorized payment ("I Didn't Initiate This") via `POST /api/transactions/:id/escalate`, status transitions to `FLAGGED_FOR_REVIEW` and enqueues to the Admin Review Queue.
   - **If Risk Level = `HIGH` (Score 71–100):**
     - Status: `BLOCKED`.
     - Transaction execution is aborted; no balance is deducted from sender.
@@ -238,17 +242,17 @@ FraudShield strictly enforces **2 user roles**:
   $$\text{finalScore} = \min(\text{totalRuleScore}, 100)$$
 - **FR-FRD-04:** The engine shall map the composite score to the approved categorical Risk Levels:
   - `0 – 30`: `LOW` Risk (`APPROVED`)
-  - `31 – 70`: `MEDIUM` Risk (`FLAGGED_FOR_REVIEW`)
+  - `31 – 70`: `MEDIUM` Risk (`CUSTOMER_VERIFICATION_REQUIRED`)
   - `71 – 100`: `HIGH` Risk (`BLOCKED`)
 - **FR-FRD-05:** The engine shall record the complete breakdown of triggered rules, raw score, and evaluation timestamp directly onto the transaction record for total explainability.
 
 ### 7.6 Module: Fraud Alerting
-- **FR-ALT-01:** Whenever a transaction is classified as `FLAGGED_FOR_REVIEW` or `BLOCKED`, the system shall generate a structured Fraud Alert document.
-- **FR-ALT-02:** Customers shall receive an in-app alert informing them that their transaction has been flagged or blocked for security reasons, without exposing internal rule thresholds.
-- **FR-ALT-03:** Admins shall see newly generated alerts within their monitoring queue.
+- **FR-ALT-01:** Whenever a transaction is classified as `CUSTOMER_VERIFICATION_REQUIRED`, `FLAGGED_FOR_REVIEW`, or `BLOCKED`, the system shall generate a structured Fraud Alert document.
+- **FR-ALT-02:** Customers shall receive an in-app alert informing them that their transaction requires confirmation or has been blocked for security reasons, without exposing internal rule thresholds.
+- **FR-ALT-03:** Admins shall see newly escalated alerts within their monitoring queue.
 
 ### 7.7 Module: Suspicious Transaction Review (Admin Workflow)
-- **FR-REV-01:** The system shall provide Admins with a dedicated queue of transactions currently in `FLAGGED_FOR_REVIEW` status.
+- **FR-REV-01:** The system shall provide Admins with a dedicated queue of escalated transactions currently in `FLAGGED_FOR_REVIEW` status (reported by customer as unauthorized or escalated for investigation). Normal medium-risk transactions do not burden the admin queue.
 - **FR-REV-02:** Admins shall be able to inspect all case parameters:
   - Sender profile, account age, and past 30-day transaction history.
   - Recipient profile and beneficiary relationship history.
@@ -308,11 +312,11 @@ The complete end-to-end lifecycle of a transaction through FraudShield is illust
 |     -> Response: 200 OK (Payment Successful)                                   |
 +---------------------------------------------------------------------------------+
 |  B. Score 31 - 70 (MEDIUM RISK)                                                 |
-|     -> Status: FLAGGED_FOR_REVIEW                                               |
+|     -> Status: CUSTOMER_VERIFICATION_REQUIRED                                   |
 |     -> Escrow Hold: Sender availableBalance - Amount | Sender heldBalance + Amount |
 |     -> Recipient balance unchanged                                              |
-|     -> Alert Generated -> Enqueued to Admin Review Queue                        |
-|     -> Response: 202 Accepted (Transaction Held in Escrow for Security Review)  |
+|     -> In-App Alert: Verification required; customer prompted to confirm        |
+|     -> Response: 202 Accepted (Transaction Held in Escrow for Self-Verification)|
 +---------------------------------------------------------------------------------+
 |  C. Score 71 - 100 (HIGH RISK)                                                  |
 |     -> Status: BLOCKED                                                          |
@@ -321,11 +325,28 @@ The complete end-to-end lifecycle of a transaction through FraudShield is illust
 |     -> Response: 400 Bad Request / 403 Forbidden (Blocked for Security)         |
 +---------------------------------------------------------------------------------+
     |
-    | [If Transaction is FLAGGED_FOR_REVIEW]
+    | [If Transaction is CUSTOMER_VERIFICATION_REQUIRED]
     v
-[Admin / Fraud Analyst Review]
+[Customer Self-Verification Portal / Option]
     |
-    | 9. Admin Inspects Transaction in Review Queue
+    +---> Option 1: Customer confirms payment ("Confirm Payment")
+    |       -> POST /api/transactions/:id/confirm
+    |       -> Atomic concurrency lock (status: 'PENDING')
+    |       -> Fresh Pre-Settlement Fraud Re-Evaluation
+    |       -> If Acceptable:
+    |            Sender heldBalance - Amount | Recipient availableBalance + Amount
+    |            Status: APPROVED (Settled)
+    |       -> If Elevated to HIGH:
+    |            Sender heldBalance - Amount | Sender availableBalance + Amount (Refunded)
+    |            Status: BLOCKED
+    |
+    +---> Option 2: Customer reports unauthorized payment ("I Didn't Initiate This")
+            -> POST /api/transactions/:id/escalate
+            -> Status: FLAGGED_FOR_REVIEW
+            v
+[Admin / Fraud Analyst Review Queue (Escalated Only)]
+    |
+    | 9. Admin Inspects Escalated Case in Review Queue
     | 10. (Optional, On-Demand) Admin clicks "Analyze Case with Gemini"
     |       -> Backend Sanitizes Payload (Redacts PII)
     |       -> Calls Gemini API -> Returns Summary & Questions
@@ -336,7 +357,7 @@ The complete end-to-end lifecycle of a transaction through FraudShield is illust
     |       -> MANUAL REJECT:
     |            Sender heldBalance - Amount | Sender availableBalance + Amount
     |            Status: REJECTED
-    | 12. Mandatory Resolution Notes & Action Recorded in Immutable Audit Trail
+    | 12. Mandatory Resolution Notes (>= 10 chars) & Action Recorded in Immutable Audit Trail
     v
 [Complete]
 ```
@@ -377,7 +398,7 @@ $$\text{finalScore} = \min(\text{totalRuleScore}, 100)$$
 | Score Range | Risk Level | System Action | Transaction State | Balance Impact | Customer Experience |
 | :---: | :---: | :---: | :---: | :--- | :--- |
 | **0 – 30** | **LOW** | **APPROVE** | `APPROVED` | Immediate debit from sender `availableBalance` to recipient `availableBalance`. | Seamless instant payment execution. |
-| **31 – 70** | **MEDIUM** | **REVIEW** | `FLAGGED_FOR_REVIEW` | Escrow Hold: Amount moved from sender `availableBalance` to `heldBalance`. Recipient not credited yet. | Payment held in escrow; message: *"Your transaction is undergoing standard security review."* Enqueued for Admin. |
+| **31 – 70** | **MEDIUM** | **VERIFY** | `CUSTOMER_VERIFICATION_REQUIRED` | Escrow Hold: Amount moved from sender `availableBalance` to `heldBalance`. Recipient not credited yet. | Payment held in escrow; customer self-verification prompt: *"Confirm Payment"* or *"I Didn't Initiate This"*. Escalate to Admin queue only if reported by customer. |
 | **71 – 100** | **HIGH** | **BLOCK** | `BLOCKED` | No balance deduction. | Payment immediately halted; message: *"Transaction blocked due to high security risk. Please contact support."* |
 
 ---
@@ -385,14 +406,16 @@ $$\text{finalScore} = \min(\text{totalRuleScore}, 100)$$
 ## 11. Fraud Alerts
 
 ### 11.1 Customer-Facing Alerts
-- When a transaction is `FLAGGED_FOR_REVIEW`, an in-app security notification is created:
-  - *Title:* "Transaction Under Review"
+- When a transaction is `CUSTOMER_VERIFICATION_REQUIRED`, an in-app security notification is created prompting self-verification:
+  - *Title:* "Payment Verification Required"
   - *Details:* Timestamp, Transaction ID, Amount (₹), Recipient.
+  - *Actions:* Customer can self-confirm via "Confirm Payment" or escalate via "I Didn't Initiate This".
   - *Note:* Specific triggered rule names and internal points are omitted to prevent adversarial reverse-engineering.
+- When a customer reports a transaction as unauthorized, it transitions to `FLAGGED_FOR_REVIEW` and notifies the customer that the payment is under analyst investigation.
 - When a transaction is `BLOCKED`, an in-app alert is created notifying the customer to review their account security.
 
 ### 11.2 Admin / Internal Alerts
-- Every `FLAGGED_FOR_REVIEW` or `BLOCKED` transaction generates a high-priority entry in the Admin Alert Queue with:
+- Every `FLAGGED_FOR_REVIEW` (escalated by customer) or `BLOCKED` transaction generates a high-priority entry in the Admin Alert Queue with:
   - Severity indicator (`MEDIUM` or `HIGH`).
   - Aggregated triggered rule codes (`RULE_AMT_EXTREME`, `RULE_DEVICE_NEW`, etc.).
   - User ID, recipient ID, transaction amount (₹), and calculated risk score.
@@ -692,7 +715,85 @@ The following formal decisions have been ratified by the stakeholder and baselin
 | **1. User Roles** | Strictly **2 roles**: `customer` and `admin`. | **Approved** |
 | **2. Wallet Architecture** | **Simulated Digital Wallet** with `availableBalance`, `heldBalance`, transaction history, and test deposit capability. No real banking gateways. | **Approved** |
 | **3. Fraud Rules & Weights** | **6 Deterministic Rules** using **INR (₹)** thresholds: `RULE_AMT_EXTREME` (+35), `RULE_VELOCITY_HIGH` (+30), `RULE_DEVICE_NEW` (+25), `RULE_BENEFICIARY_NEW` (+30), `RULE_FAIL_BURST` (+20), `RULE_DORMANT_SPIKE` (+25). Final score capped at 100: $\min(\text{totalRuleScore}, 100)$. | **Approved** |
-| **4. Risk Levels** | `0–30` → **LOW** (`APPROVED`); `31–70` → **MEDIUM** (`FLAGGED_FOR_REVIEW`); `71–100` → **HIGH** (`BLOCKED`). | **Approved** |
-| **5. Review Funds Handling** | **Option A — Escrow Hold**: Amount moved from `availableBalance` to `heldBalance` during review; settled upon manual approval/rejection. | **Approved** |
+| **4. Risk Levels** | `0–30` → **LOW** (`APPROVED`); `31–70` → **MEDIUM** (`CUSTOMER_VERIFICATION_REQUIRED` / Escrow Hold; escalates to `FLAGGED_FOR_REVIEW` upon customer report); `71–100` → **HIGH** (`BLOCKED`). | **Approved** |
+| **5. Review Funds Handling** | **Option A — Escrow Hold**: Amount moved from `availableBalance` to `heldBalance` during self-verification or escalated review; settled upon customer confirmation or admin resolution. | **Approved** |
 | **6. Gemini AI Assistant** | **Option A — On-Demand**: Invoked only when admin requests investigation brief. Cannot make or override final fraud decisions. | **Approved** |
 | **7. Module Structure** | **11 Modules**: Modules 1 through 11 established as the foundation for upcoming implementation plans and test suites. | **Approved** |
+
+---
+
+## 24. Production Visual Architecture & Design Language (BizOS Visual Baseline)
+
+### 24.1 Visual System & Editorial Palette
+FraudShield adopts an editorial, clean geometric visual language inspired by modern operational systems (BizOS design philosophy). The visual architecture eliminates generic bright blue SaaS cliches, dark gamified aesthetics, emojis, excessive glassmorphism, and fake statistics.
+
+- **Background Canvas (`bg`):** Pale mint / soft sage `#EDF6F1`
+- **Primary Accent (`primary`):** Deep muted forest green `#285C4D` (hover: `#1d453a`, light: `#377764`)
+- **Typography & Dark Elements (`dark`):** Charcoal / deep slate `#17211D`
+- **Card Surfaces (`surface`):** Warm crisp white `#FAFCFA`
+- **Subtle Containers / Tints (`soft`):** Soft sage/mint `#DCEBE4`
+- **Borders & Dividers (`border`):** Soft green-gray `#D4E2DC`
+- **Warning Indicator (`warning`):** Warm amber `#C89445` (for Medium Risk / `CUSTOMER_VERIFICATION_REQUIRED` / `FLAGGED_FOR_REVIEW`)
+- **Danger / Block Indicator (`danger`):** Muted crimson `#B65D59` (for High Risk / `BLOCKED`)
+- **Approved / Low Risk:** Primary deep forest green `#285C4D` or clean emerald `#2D7A58`
+- **Restrained Elevation:** Minimal subtle drop shadows (`shadow-sm`), relying instead on crisp geometric borders (`border border-[#D4E2DC]`) and generous whitespace.
+- **Editorial Typography:** High-contrast charcoal headings, tabular numerical figures, clean monospace for IDs and reason codes.
+- **Iconography Standard:** Exclusively Lucide React SVG icons. Zero consumer emojis permitted across the entire application.
+
+### 24.2 Modular Node.js Monolith Backend Architecture
+The backend follows a strict modular structure decoupling the deterministic fraud engine, repositories, validators, and audit pipelines from controllers:
+
+```
+backend/src/
+├── controllers/            # Thin HTTP controllers handling requests/responses
+├── services/               # Orchestration and core domain services
+├── repositories/           # Data access layer interfacing directly with Mongoose models
+├── models/                 # Mongoose schema definitions
+├── routes/                 # Express REST endpoint route definitions
+├── middlewares/            # Auth, device context, rate-limiting, error handling
+├── validators/             # Joi-based payload schemas and request validators
+├── fraud/                  # Independent deterministic fraud detection subsystem
+│   ├── rules/
+│   │   ├── amountRule.js           # Rule 1: Extreme Amount (+35, RULE_AMT_EXTREME)
+│   │   ├── velocityRule.js         # Rule 2: High Velocity (+30, RULE_VELOCITY_HIGH)
+│   │   ├── deviceRule.js           # Rule 3: New Device (+25, RULE_DEVICE_NEW)
+│   │   ├── beneficiaryRule.js      # Rule 4: New Beneficiary (+30, RULE_BENEFICIARY_NEW)
+│   │   ├── failedAttemptsRule.js   # Rule 5: Failed Attempt Burst (+20, RULE_FAIL_BURST)
+│   │   └── dormantAccountRule.js   # Rule 6: Dormant Account Spike (+25, RULE_DORMANT_SPIKE)
+│   ├── fraudEngine.js              # Evaluates the 6 heuristic rules concurrently
+│   ├── riskCalculator.js           # Computes finalScore = min(totalRuleScore, 100) & risk tiers
+│   └── contextCollector.js         # Queries historical and behavioral telemetry
+├── audit/                  # Audit log dispatcher and event recording
+├── config/                 # Environment variables and database connectivity
+├── utils/                  # Structured API response formatters and JWT helpers
+└── tests/                  # Jest and Supertest test suites
+```
+
+### 24.3 Customer Self-Verification & Escalated Human-in-the-Loop Governance
+Medium-risk transactions (score 31–70) use customer self-verification to eliminate 24/7 admin dependency:
+- Funds are locked in sender `heldBalance` with status `CUSTOMER_VERIFICATION_REQUIRED`.
+- Customer confirms payment (`POST /api/transactions/:id/confirm`) -> atomic lock (`PENDING`) -> pre-settlement re-screening -> settles to `APPROVED` (funds released to recipient) or blocks if elevated to `HIGH` (funds refunded to sender).
+- If customer reports unauthorized payment (`POST /api/transactions/:id/escalate`) -> status becomes `FLAGGED_FOR_REVIEW`.
+- Fraud analysts examine escalated transactions in the Admin Review Queue:
+  - Inspect heuristic triggers, device telemetry, customer history, and optional Gemini co-pilot advisory briefings.
+  - Explicit analyst sign-off requires a mandatory rationale note of $\ge 10$ characters stored immutably in system audit logs.
+  - `APPROVE`: Transfers `heldBalance` directly to recipient's `availableBalance`.
+  - `REJECT`: Refunds `heldBalance` back to sender's `availableBalance`.
+
+### 24.4 Definition of Done Demo Scenarios
+The implementation is verified against three standard end-to-end scenarios:
+- **Scenario 1 (Low Risk - Instant Approval):**
+  - Amount: ₹2,000 | Known device | Known beneficiary
+  - Score: 0 / 100 | Risk Level: `LOW` | Status: `APPROVED`
+  - Balance Impact: Sender `availableBalance` debited ₹2,000, recipient `availableBalance` credited ₹2,000.
+- **Scenario 2 (Medium Risk - Customer Self-Verification & Escalation Flow):**
+  - Amount: ₹15,000 | New device (`RULE_DEVICE_NEW` +25) | Additional risk factor
+  - Score: 55 / 100 | Risk Level: `MEDIUM` | Status: `CUSTOMER_VERIFICATION_REQUIRED`
+  - Balance Impact: Sender `availableBalance` debited, sender `heldBalance` credited. Recipient not credited yet.
+  - Customer Action A (Self-Verification): Customer clicks "Confirm Payment" -> re-evaluated -> settles to `APPROVED`, transferring `heldBalance` to recipient `availableBalance`.
+  - Customer Action B (Escalation): Customer clicks "I Didn't Initiate This" -> status transitions to `FLAGGED_FOR_REVIEW` -> enqueued into Admin Review Queue for manual analyst investigation and resolution (`APPROVE`/`REJECT`).
+- **Scenario 3 (High Risk - Automatic Block):**
+  - Amount: ₹60,000 (`RULE_AMT_EXTREME` +35) | New device (`RULE_DEVICE_NEW` +25) | New beneficiary (`RULE_BENEFICIARY_NEW` +30)
+  - Score: 90 / 100 | Risk Level: `HIGH` | Status: `BLOCKED`
+  - Balance Impact: Zero debit, zero credit. Alert logged. Explainability breakdown shows why it was blocked.
+

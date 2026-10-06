@@ -10,6 +10,8 @@ router.use(authenticateToken);
 router.use(authorizeRole(['admin']));
 
 router.get('/', reviewController.getPendingReviews);
+router.get('/pending', reviewController.getPendingReviews);
+router.get('/stats', reviewController.getAdminStats);
 router.get('/:id', reviewController.getReviewDetails);
 router.post('/:id/resolve', reviewController.resolveReview);
 router.post('/:id/ai-analyze', aiController.analyzeTransaction);

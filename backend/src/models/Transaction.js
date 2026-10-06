@@ -27,7 +27,7 @@ const transactionSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['PENDING', 'APPROVED', 'FLAGGED_FOR_REVIEW', 'BLOCKED', 'REJECTED'],
+      enum: ['PENDING', 'APPROVED', 'FLAGGED_FOR_REVIEW', 'CUSTOMER_VERIFICATION_REQUIRED', 'BLOCKED', 'REJECTED'],
       default: 'PENDING',
       required: true,
       index: true
@@ -55,6 +55,11 @@ const transactionSchema = new mongoose.Schema(
       ipAddress: { type: String, default: 'unknown' },
       userAgent: { type: String, default: 'unknown' }
     },
+    behaviorContext: {
+      historyAvg: { type: Number, default: 0 },
+      amountRatio: { type: Number, default: 0 },
+      historyCount: { type: Number, default: 0 }
+    },
     note: {
       type: String,
       maxlength: [200, 'Note cannot exceed 200 characters'],
@@ -75,6 +80,11 @@ const transactionSchema = new mongoose.Schema(
     },
     resolvedAt: {
       type: Date
+    },
+    verificationDetails: {
+      verifiedAt: { type: Date },
+      verifiedVia: { type: String, default: 'CUSTOMER_CONFIRMATION' },
+      ipAddress: { type: String }
     },
     aiInvestigation: {
       caseSummary: { type: String },

@@ -76,7 +76,7 @@ const logEvent = async ({
  * @returns {Promise<{logs: Array, pagination: Object}>}
  */
 const getAuditLogs = async (queryParams = {}) => {
-  let { page = 1, limit = 20, eventType, actorId, startDate, endDate } = queryParams;
+  let { page = 1, limit = 20, eventType, actorId, entityId, startDate, endDate } = queryParams;
 
   // EC-M9-005: Limit validation and clamping
   page = Math.max(1, parseInt(page, 10) || 1);
@@ -90,6 +90,10 @@ const getAuditLogs = async (queryParams = {}) => {
 
   if (actorId) {
     filter.actorId = actorId;
+  }
+
+  if (entityId) {
+    filter['targetEntity.entityId'] = entityId;
   }
 
   if (startDate || endDate) {

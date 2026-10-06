@@ -9,10 +9,10 @@ const AdminRoute = ({ children }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-[#0B1120] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-          <p className="text-xs font-semibold text-slate-500">Authenticating administrator session...</p>
+          <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+          <p className="text-xs font-semibold text-slate-400">Authenticating administrator session...</p>
         </div>
       </div>
     );

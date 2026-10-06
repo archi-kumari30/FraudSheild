@@ -4,9 +4,7 @@ import { X } from 'lucide-react';
 const Modal = ({ isOpen, onClose, title, children, maxWidth = 'max-w-md' }) => {
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
+      if (e.key === 'Escape') onClose();
     };
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -21,32 +19,32 @@ const Modal = ({ isOpen, onClose, title, children, maxWidth = 'max-w-md' }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+        className="fixed inset-0 bg-[#17211D]/40 backdrop-blur-xs transition-opacity"
         onClick={onClose}
       />
 
-      <div className="flex min-h-full items-center justify-center p-4">
-        <div
-          className={`relative w-full ${maxWidth} bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden transform transition-all p-6`}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-            <h3 className="text-lg font-bold text-slate-900">{title}</h3>
-            <button
-              onClick={onClose}
-              className="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-lg hover:bg-slate-100"
-              aria-label="Close modal"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+      {/* Modal Dialog */}
+      <div
+        className={`relative w-full ${maxWidth} rounded-xl bg-[#FAFCFA] border border-[#D4E2DC] shadow-xl text-[#17211D] z-10 overflow-hidden transform transition-all my-8`}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#D4E2DC] bg-[#F4F8F5]">
+          <h3 className="text-base font-semibold text-[#17211D] tracking-tight">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-md text-[#5A6E65] hover:text-[#17211D] hover:bg-[#DCEBE4] transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
 
-          {/* Body */}
-          <div className="mt-4">{children}</div>
+        {/* Content Body */}
+        <div className="p-6 max-h-[calc(100vh-12rem)] overflow-y-auto text-[#17211D]">
+          {children}
         </div>
       </div>
     </div>

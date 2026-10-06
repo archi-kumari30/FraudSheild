@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Shield, Lock, Mail, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { Shield, Lock, Mail, ArrowRight, ArrowLeft, Loader2, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const LoginPage = () => {
@@ -10,18 +10,30 @@ const LoginPage = () => {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [successNotice, setSuccessNotice] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const queryParams = new URLSearchParams(location.search);
   const isExpired = queryParams.get('expired') === 'true';
 
+  useEffect(() => {
+    if (location.state?.registeredEmail) {
+      setEmail(location.state.registeredEmail);
+    }
+    if (location.state?.message) {
+      setSuccessNotice(location.state.message);
+    }
+  }, [location.state]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setError('');
 
     if (!email.trim() || !password) {
-      setError('Please fill in both email and password');
+      setError('Please fill in both email and password.');
       return;
     }
 
@@ -29,56 +41,87 @@ const LoginPage = () => {
     try {
       const user = await login(email.trim(), password);
       if (user.role === 'admin') {
-        navigate('/admin/reviews');
+        navigate('/admin/dashboard');
       } else {
         navigate('/dashboard');
       }
     } catch (err) {
-      setError(err.message || 'Invalid email or password');
+      if (err.status === 429 || err.code === 'RATE_LIMIT_EXCEEDED') {
+        setError('Too many login attempts. Please wait before trying again.');
+      } else if (err.code === 'NETWORK_ERROR' || err.status === 0) {
+        setError('Unable to connect to the FraudShield server. Please ensure the backend is running.');
+      } else if (err.status === 401 || err.code === 'INVALID_CREDENTIALS') {
+        setError('Incorrect email or password.');
+      } else {
+        setError(err.message || 'Incorrect email or password.');
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-[#EDF6F1] text-[#17211D] flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <div className="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center mx-auto shadow-lg shadow-indigo-200">
-          <Shield className="w-8 h-8" />
+        {/* Clickable FraudShield Logo & Brand Name */}
+        <Link to="/" className="inline-flex items-center gap-2.5 hover:opacity-90 transition-opacity">
+          <div className="w-11 h-11 rounded-xl bg-[#285C4D] text-white flex items-center justify-center shadow-xs">
+            <Shield className="w-6 h-6" />
+          </div>
+          <span className="font-serif font-bold text-2xl tracking-tight text-[#17211D]">
+            FraudShield
+          </span>
+        </Link>
+
+        {/* Back to Home Link */}
+        <div className="mt-2">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#5A6E65] hover:text-[#285C4D] transition-colors"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>← Back to Home</span>
+          </Link>
         </div>
-        <h2 className="mt-4 text-2xl font-black text-slate-900 tracking-tight">
-          Fraud<span className="text-indigo-600">Shield</span>
+
+        <h2 className="mt-5 text-2xl font-serif font-bold tracking-tight text-[#17211D]">
+          Sign In to FraudShield
         </h2>
-        <p className="mt-1 text-xs text-slate-500 font-medium">
-          Real-Time Rule-Based Fraud Detection & Prevention Platform
+        <p className="mt-1 text-xs text-[#5A6E65]">
+          Deterministic Rule-Based Fraud Detection & Risk Scoring
         </p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4">
-        <div className="bg-white py-8 px-6 sm:px-10 shadow-xl shadow-slate-100 rounded-3xl border border-slate-200/80">
-          <h3 className="text-lg font-bold text-slate-900 mb-6">Sign in to your account</h3>
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-[#FAFCFA] border border-[#D4E2DC] py-8 px-6 sm:px-10 rounded-xl shadow-card">
+          {successNotice && (
+            <div className="mb-5 p-3.5 rounded-lg bg-[#EAF3EF] border border-[#C8DCD2] text-[#1E473B] text-xs font-medium flex items-center gap-2.5">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-[#285C4D]" />
+              <span>{successNotice}</span>
+            </div>
+          )}
 
           {isExpired && (
-            <div className="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+            <div className="mb-5 p-3.5 rounded-lg bg-[#FAF4EB] border border-[#EAD7BA] text-[#946625] text-xs font-medium flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 text-[#C89445]" />
               <span>Your session has expired. Please sign in again.</span>
             </div>
           )}
 
           {error && (
-            <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
+            <div className="mb-5 p-3.5 rounded-lg bg-[#FBF0EF] border border-[#E6BFBD] text-[#8C3E3A] text-xs font-medium flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 text-[#B65D59]" />
               <span>{error}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+              <label className="block text-xs font-semibold text-[#17211D] mb-1.5">
                 Email Address
               </label>
               <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#5A6E65]">
                   <Mail className="w-4 h-4" />
                 </span>
                 <input
@@ -87,36 +130,49 @@ const LoginPage = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@example.com"
                   disabled={isSubmitting}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium text-slate-900"
-                  required
+                  className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[#FAFCFA] border border-[#D4E2DC] focus:border-[#285C4D] focus:outline-none focus:ring-1 focus:ring-[#285C4D] text-sm text-[#17211D] placeholder-[#5A6E65]/50"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Password
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-[#17211D]">
+                  Password
+                </label>
+                <Link
+                  to="/forgot-password"
+                  className="text-xs font-medium text-[#285C4D] hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#5A6E65]">
                   <Lock className="w-4 h-4" />
                 </span>
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   disabled={isSubmitting}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium text-slate-900"
-                  required
+                  className="w-full pl-10 pr-10 py-2.5 rounded-lg bg-[#FAFCFA] border border-[#D4E2DC] focus:border-[#285C4D] focus:outline-none focus:ring-1 focus:ring-[#285C4D] text-sm text-[#17211D] placeholder-[#5A6E65]/50"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#5A6E65] hover:text-[#17211D]"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full mt-2 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm shadow-md shadow-indigo-200 disabled:opacity-50 transition-all hover:scale-[1.01] active:scale-[0.99]"
+              className="w-full mt-2 inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-[#285C4D] hover:bg-[#1d453a] text-white font-medium text-xs shadow-xs disabled:opacity-50 transition-colors"
             >
               {isSubmitting ? (
                 <>
@@ -126,19 +182,17 @@ const LoginPage = () => {
               ) : (
                 <>
                   <span>Sign In</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </>
               )}
             </button>
           </form>
 
-          <div className="mt-6 pt-5 border-t border-slate-100 text-center">
-            <p className="text-xs text-slate-500">
-              Don't have an account?{' '}
-              <Link to="/register" className="font-bold text-indigo-600 hover:text-indigo-800">
-                Register as Customer
-              </Link>
-            </p>
+          <div className="mt-5 text-center text-xs text-[#5A6E65]">
+            Don't have an account?{' '}
+            <Link to="/register" className="text-[#285C4D] font-semibold hover:underline">
+              Create an account
+            </Link>
           </div>
         </div>
       </div>

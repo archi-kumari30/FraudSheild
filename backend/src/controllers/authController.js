@@ -135,8 +135,105 @@ const getMe = async (req, res) => {
   });
 };
 
+const crypto = require('crypto');
+
+/**
+ * Request password reset token
+ * POST /api/auth/forgot-password
+ */
+const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email: email ? email.toLowerCase() : '' });
+
+    if (!user) {
+      // Safe generic message to prevent email enumeration
+      return successResponse(
+        res,
+        200,
+        'If your email is registered, password reset instructions have been generated.',
+        { resetToken: null }
+      );
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+    // Token expires in 15 minutes
+    user.passwordResetToken = hashedToken;
+    user.passwordResetExpires = Date.now() + 15 * 60 * 1000;
+    await user.save();
+
+    await auditService.logEvent({
+      eventType: 'AUTH_PASSWORD_RESET_REQUESTED',
+      actorId: user._id,
+      actorRole: user.role,
+      targetEntity: { entityType: 'User', entityId: user._id },
+      metadata: { email: user.email },
+      ipAddress: req.ip || 'unknown'
+    });
+
+    return successResponse(
+      res,
+      200,
+      'Password reset instructions generated.',
+      {
+        resetToken,
+        notice: 'In development mode without an external mail provider, your reset token is provided directly above for verification.'
+      }
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Reset password using valid token
+ * POST /api/auth/reset-password
+ */
+const resetPassword = async (req, res, next) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await User.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return errorResponse(res, 400, 'Password reset token is invalid or has expired', 'INVALID_RESET_TOKEN');
+    }
+
+    user.passwordHash = await User.hashPassword(newPassword);
+    user.passwordResetToken = null;
+    user.passwordResetExpires = null;
+    await user.save();
+
+    await auditService.logEvent({
+      eventType: 'AUTH_PASSWORD_RESET_COMPLETED',
+      actorId: user._id,
+      actorRole: user.role,
+      targetEntity: { entityType: 'User', entityId: user._id },
+      metadata: { email: user.email },
+      ipAddress: req.ip || 'unknown'
+    });
+
+    return successResponse(
+      res,
+      200,
+      'Password reset successfully. You can now sign in with your new password.'
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
-  getMe
+  getMe,
+  forgotPassword,
+  resetPassword
 };

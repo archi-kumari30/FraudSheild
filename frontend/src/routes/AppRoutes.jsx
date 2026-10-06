@@ -1,12 +1,30 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import LandingPage from '../pages/public/LandingPage';
+import SecurityTrustPage from '../pages/public/SecurityTrustPage';
 import LoginPage from '../pages/customer/LoginPage';
 import RegisterPage from '../pages/customer/RegisterPage';
+import ForgotPasswordPage from '../pages/customer/ForgotPasswordPage';
+import ResetPasswordPage from '../pages/customer/ResetPasswordPage';
+import CustomerLayout from '../layouts/CustomerLayout';
 import DashboardPage from '../pages/customer/DashboardPage';
+import WalletPage from '../pages/customer/WalletPage';
+import SendMoneyPage from '../pages/customer/SendMoneyPage';
 import BeneficiariesPage from '../pages/customer/BeneficiariesPage';
 import TransactionsPage from '../pages/customer/TransactionsPage';
+import AlertsPage from '../pages/customer/AlertsPage';
+import CustomerSettingsPage from '../pages/customer/SettingsPage';
+import SecurityPage from '../pages/customer/SecurityPage';
+import AdminLayout from '../layouts/AdminLayout';
+import AdminOverviewPage from '../pages/admin/AdminOverviewPage';
 import AdminDashboardPage from '../pages/admin/AdminDashboardPage';
+import AdminTransactionsPage from '../pages/admin/AdminTransactionsPage';
+import TransactionInvestigationPage from '../pages/admin/TransactionInvestigationPage';
+import AdminAlertsPage from '../pages/admin/AdminAlertsPage';
 import AuditLogsPage from '../pages/admin/AuditLogsPage';
+import AdminHealthPage from '../pages/admin/AdminHealthPage';
+import SecurityRulesPage from '../pages/admin/SecurityRulesPage';
+import AiInvestigationPage from '../pages/admin/AiInvestigationPage';
 import ProtectedRoute from './ProtectedRoute';
 import AdminRoute from './AdminRoute';
 import { useAuth } from '../context/AuthContext';
@@ -16,12 +34,16 @@ const AppRoutes = () => {
 
   return (
     <Routes>
-      {/* Public Authentication Routes */}
+      {/* Public Pages */}
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/security-trust" element={<SecurityTrustPage />} />
+
+      {/* Authentication Pages */}
       <Route
         path="/login"
         element={
           isAuthenticated ? (
-            <Navigate to={isAdmin ? '/admin/reviews' : '/dashboard'} replace />
+            <Navigate to={isAdmin ? '/admin/dashboard' : '/dashboard'} replace />
           ) : (
             <LoginPage />
           )
@@ -37,76 +59,69 @@ const AppRoutes = () => {
           )
         }
       />
-
-      {/* Customer Protected Routes */}
       <Route
-        path="/dashboard"
+        path="/forgot-password"
         element={
-          <ProtectedRoute requiredRole="customer">
-            <DashboardPage />
-          </ProtectedRoute>
+          isAuthenticated ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <ForgotPasswordPage />
+          )
         }
       />
       <Route
-        path="/beneficiaries"
+        path="/reset-password"
         element={
-          <ProtectedRoute requiredRole="customer">
-            <BeneficiariesPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/transactions"
-        element={
-          <ProtectedRoute requiredRole="customer">
-            <TransactionsPage />
-          </ProtectedRoute>
+          isAuthenticated ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <ResetPasswordPage />
+          )
         }
       />
 
-      {/* Admin Protected Routes */}
+      {/* Customer Protected Layout & Subroutes */}
       <Route
-        path="/admin/reviews"
+        element={
+          <ProtectedRoute requiredRole="customer">
+            <CustomerLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/wallet" element={<WalletPage />} />
+        <Route path="/send-money" element={<SendMoneyPage />} />
+        <Route path="/beneficiaries" element={<BeneficiariesPage />} />
+        <Route path="/transactions" element={<TransactionsPage />} />
+        <Route path="/alerts" element={<AlertsPage />} />
+        <Route path="/security" element={<SecurityPage />} />
+        <Route path="/settings" element={<CustomerSettingsPage />} />
+      </Route>
+
+      {/* Admin Protected Layout & Subroutes */}
+      <Route
         element={
           <AdminRoute>
-            <AdminDashboardPage />
+            <AdminLayout />
           </AdminRoute>
         }
-      />
-      <Route
-        path="/admin/dashboard"
-        element={<Navigate to="/admin/reviews" replace />}
-      />
-      <Route
-        path="/admin/audit-logs"
-        element={
-          <AdminRoute>
-            <AuditLogsPage />
-          </AdminRoute>
-        }
-      />
+      >
+        <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+        <Route path="/admin/dashboard" element={<AdminOverviewPage />} />
+        <Route path="/admin/reviews" element={<AdminDashboardPage />} />
+        <Route path="/admin/transactions" element={<AdminTransactionsPage />} />
+        <Route path="/admin/transactions/:id" element={<TransactionInvestigationPage />} />
+        <Route path="/admin/investigation/:id" element={<TransactionInvestigationPage />} />
+        <Route path="/admin/alerts" element={<AdminAlertsPage />} />
+        <Route path="/admin/audit-logs" element={<AuditLogsPage />} />
+        <Route path="/admin/health" element={<AdminHealthPage />} />
+        <Route path="/admin/rules" element={<SecurityRulesPage />} />
+        <Route path="/admin/settings" element={<SecurityRulesPage />} />
+        <Route path="/admin/ai-investigation" element={<AiInvestigationPage />} />
+      </Route>
 
-      {/* Default route redirect */}
-      <Route
-        path="/"
-        element={
-          <Navigate
-            to={isAuthenticated ? (isAdmin ? '/admin/reviews' : '/dashboard') : '/login'}
-            replace
-          />
-        }
-      />
-
-      {/* Catch-all 404 */}
-      <Route
-        path="*"
-        element={
-          <Navigate
-            to={isAuthenticated ? (isAdmin ? '/admin/reviews' : '/dashboard') : '/login'}
-            replace
-          />
-        }
-      />
+      {/* Catch-all */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 };

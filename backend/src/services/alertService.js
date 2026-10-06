@@ -25,12 +25,17 @@ const createAlert = async (userId, transactionId, severity, title, message) => {
 };
 
 /**
- * Retrieve alerts for a specific user
+ * Retrieve alerts for a specific user (or all alerts if admin)
  * @param {string|ObjectId} userId
+ * @param {string} userRole
  * @returns {Promise<Array<Alert>>}
  */
-const getUserAlerts = async (userId) => {
-  return Alert.find({ userId }).sort({ createdAt: -1 });
+const getUserAlerts = async (userId, userRole = 'customer') => {
+  const query = userRole === 'admin' ? {} : { userId };
+  return Alert.find(query)
+    .sort({ createdAt: -1 })
+    .populate('userId', 'name email')
+    .populate('transactionId');
 };
 
 /**

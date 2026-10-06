@@ -73,7 +73,7 @@ describe('Module 7: Alert Service Tests', () => {
     const alerts = await Alert.find({ userId: senderId });
     expect(alerts.length).toBe(1);
     expect(alerts[0].severity).toBe('MEDIUM');
-    expect(alerts[0].title).toBe('Transaction Held in Escrow for Review');
+    expect(alerts[0].title).toBe('Additional verification is required for this payment.');
     expect(alerts[0].isRead).toBe(false);
   });
 

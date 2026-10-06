@@ -58,6 +58,7 @@ const resolveReview = async (req, res, next) => {
       200,
       `Transaction successfully ${resolvedTransaction.status.toLowerCase()}`,
       {
+        status: resolvedTransaction.status,
         transaction: resolvedTransaction
       }
     );
@@ -69,8 +70,41 @@ const resolveReview = async (req, res, next) => {
   }
 };
 
+const Transaction = require('../models/Transaction');
+const AuditLog = require('../models/AuditLog');
+const User = require('../models/User');
+
+/**
+ * Get summary metrics for admin SOC dashboard
+ * GET /api/admin/reviews/stats
+ */
+const getAdminStats = async (req, res, next) => {
+  try {
+    const [pendingCount, totalTxCount, approvedTxCount, blockedTxCount, totalAuditCount, totalCustomers] = await Promise.all([
+      Transaction.countDocuments({ status: 'FLAGGED_FOR_REVIEW' }),
+      Transaction.countDocuments(),
+      Transaction.countDocuments({ status: 'APPROVED' }),
+      Transaction.countDocuments({ status: 'BLOCKED' }),
+      AuditLog.countDocuments(),
+      User.countDocuments({ role: 'customer' })
+    ]);
+
+    return successResponse(res, 200, 'Admin statistics retrieved', {
+      pendingReviews: pendingCount,
+      totalTransactions: totalTxCount,
+      approvedTransactions: approvedTxCount,
+      blockedTransactions: blockedTxCount,
+      totalAuditLogs: totalAuditCount,
+      totalCustomers
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getPendingReviews,
   getReviewDetails,
-  resolveReview
+  resolveReview,
+  getAdminStats
 };

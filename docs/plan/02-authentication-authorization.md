@@ -82,6 +82,8 @@ The objective of **Module 2 (Authentication & Authorization)** is to implement s
   - `passwordHash`: String, required.
   - `role`: String, enum: `['customer', 'admin']`, default: `'customer'`.
   - `isActive`: Boolean, default: `true`.
+  - `passwordResetToken`: String, optional (SHA-256 hashed).
+  - `passwordResetExpires`: Date, optional.
   - `createdAt`: Date, default: `Date.now`.
   - `updatedAt`: Date, default: `Date.now`.
 - Indexes: Unique index on `email`.
@@ -95,6 +97,8 @@ The objective of **Module 2 (Authentication & Authorization)** is to implement s
 | `POST` | `/api/auth/register` | Public | Registers a new customer account (cannot self-assign `admin`). |
 | `POST` | `/api/auth/login` | Public | Authenticates credentials and returns JWT + user details. |
 | `GET` | `/api/auth/me` | Authenticated | Returns profile of currently authenticated user. |
+| `POST` | `/api/auth/forgot-password` | Public | Initiates password recovery; creates hashed 15-minute reset token. |
+| `POST` | `/api/auth/reset-password` | Public | Validates reset token and sets new password. |
 
 ---
 

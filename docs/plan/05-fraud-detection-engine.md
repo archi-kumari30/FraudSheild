@@ -36,7 +36,7 @@ The objective of **Module 5 (Rule-Based Fraud Detection Engine)** is to build th
   $$\text{finalScore} = \min(\text{totalRuleScore}, 100)$$
 - Risk tier mapping:
   - `0 – 30`: `LOW` (`APPROVED`)
-  - `31 – 70`: `MEDIUM` (`FLAGGED_FOR_REVIEW`)
+  - `31 – 70`: `MEDIUM` (`CUSTOMER_VERIFICATION_REQUIRED`)
   - `71 – 100`: `HIGH` (`BLOCKED`)
 - Unified orchestrator returning:
   `{ riskScore, riskLevel, triggeredRules: [{ ruleCode, weight, reason }] }`

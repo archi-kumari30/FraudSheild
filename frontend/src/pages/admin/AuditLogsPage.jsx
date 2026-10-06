@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import AdminNavbar from '../../components/admin/AdminNavbar';
 import AuditLogTable from '../../components/admin/AuditLogTable';
 import axiosClient from '../../api/axiosClient';
 
@@ -34,32 +33,28 @@ const AuditLogsPage = () => {
 
   const handleEventTypeChange = (newType) => {
     setEventType(newType);
-    setPage(1); // Reset to first page
+    setPage(1);
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <AdminNavbar />
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-[#17211D]">
+          System Audit Trail
+        </h1>
+        <p className="text-xs sm:text-sm text-[#5A6E65] mt-0.5">
+          Forensic append-only audit trail capturing administrative interventions, evaluations, and security events.
+        </p>
+      </div>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            System Audit Trail
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Forensic append-only audit trail capturing administrative interventions and critical events.
-          </p>
-        </div>
-
-        <AuditLogTable
-          logs={logs}
-          pagination={pagination}
-          selectedEventType={eventType}
-          onSelectEventType={handleEventTypeChange}
-          onPageChange={setPage}
-          loading={loading}
-        />
-      </main>
+      <AuditLogTable
+        logs={logs}
+        pagination={pagination}
+        selectedEventType={eventType}
+        onSelectEventType={handleEventTypeChange}
+        onPageChange={setPage}
+        loading={loading}
+      />
     </div>
   );
 };

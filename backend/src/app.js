@@ -48,19 +48,36 @@ const createApp = () => {
 
   // 5. Baseline IP Rate Limiting (Skipped in test environment)
   if (config.nodeEnv !== 'test') {
-    const apiLimiter = rateLimit({
+    const authLimiter = rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 100, // Limit each IP to 100 requests per windowMs
+      max: config.nodeEnv === 'production' ? 20 : 60,
       standardHeaders: true,
       legacyHeaders: false,
       message: {
         success: false,
         error: {
-          message: 'Too many requests from this IP, please try again after 15 minutes',
+          message: 'Too many login attempts. Please wait before trying again.',
           code: 'RATE_LIMIT_EXCEEDED'
         }
       }
     });
+
+    const apiLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: config.nodeEnv === 'production' ? 500 : 2000,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: {
+        success: false,
+        error: {
+          message: 'Too many requests. Please wait before trying again.',
+          code: 'RATE_LIMIT_EXCEEDED'
+        }
+      }
+    });
+
+    app.use('/api/auth/login', authLimiter);
+    app.use('/api/auth/register', authLimiter);
     app.use('/api/', apiLimiter);
   }
 

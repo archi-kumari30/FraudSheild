@@ -50,10 +50,10 @@ This document specifies the integration and API test cases for **Module 6: Trans
 
 ---
 
-### TC-M6-002: Medium-Risk Transaction Places Funds in Escrow (`MEDIUM` -> `FLAGGED_FOR_REVIEW`)
+### TC-M6-002: Medium-Risk Transaction Places Funds in Escrow (`MEDIUM` -> `CUSTOMER_VERIFICATION_REQUIRED`)
 - **Test Case ID:** `TC-M6-002`
 - **Module ID:** `MOD-06`
-- **Test Scenario:** A medium-risk transfer (Score 31–70) transitions to `FLAGGED_FOR_REVIEW` and reserves funds in `heldBalance`.
+- **Test Scenario:** A medium-risk transfer (Score 31–70) transitions to `CUSTOMER_VERIFICATION_REQUIRED` and reserves funds in `heldBalance`.
 - **Preconditions:**
   - Sender has `availableBalance = 20000`, `heldBalance = 0`.
   - Recipient has `availableBalance = 5000`.
@@ -64,7 +64,7 @@ This document specifies the integration and API test cases for **Module 6: Trans
   2. Inspect response and query wallets.
 - **Expected Result:**
   - Status Code: `202 Accepted`
-  - Response: `{ "status": "FLAGGED_FOR_REVIEW", "riskScore": 55, "riskLevel": "MEDIUM" }`
+  - Response: `{ "status": "CUSTOMER_VERIFICATION_REQUIRED", "riskScore": 55, "riskLevel": "MEDIUM" }`
   - Sender `availableBalance` drops to `8000` (₹8,000).
   - Sender `heldBalance` increments to `12000` (₹12,000 in escrow).
   - Recipient `availableBalance` remains `5000` (untouched).
@@ -152,17 +152,59 @@ This document specifies the integration and API test cases for **Module 6: Trans
 
 ---
 
+### TC-M6-007: Customer Self-Verification Settles Payment (`CUSTOMER_VERIFICATION_REQUIRED` -> `APPROVED`)
+- **Test Case ID:** `TC-M6-007`
+- **Module ID:** `MOD-06`
+- **Test Scenario:** Customer confirms their held transaction; pre-settlement rules re-evaluated and funds transferred to recipient.
+- **Preconditions:**
+  - Transaction in `CUSTOMER_VERIFICATION_REQUIRED` for ₹12,000.
+  - Sender `heldBalance = 12000`, recipient `availableBalance = 5000`.
+- **Steps:**
+  1. Send `POST /api/transactions/:id/confirm` with sender's JWT.
+  2. Inspect response and wallet balances.
+- **Expected Result:**
+  - Status Code: `200 OK`
+  - Response: `{ "status": "APPROVED" }`
+  - Sender `heldBalance` drops to `0`.
+  - Recipient `availableBalance` increments to `17000`.
+- **Test Type:** API / Integration
+- **Priority:** Critical
+- **Status:** Passed
+
+---
+
+### TC-M6-008: Customer Escalates Unauthorized Payment (`CUSTOMER_VERIFICATION_REQUIRED` -> `FLAGGED_FOR_REVIEW`)
+- **Test Case ID:** `TC-M6-008`
+- **Module ID:** `MOD-06`
+- **Test Scenario:** Customer flags an unrecognized held transaction as unauthorized.
+- **Preconditions:**
+  - Transaction in `CUSTOMER_VERIFICATION_REQUIRED` for ₹12,000.
+- **Steps:**
+  1. Send `POST /api/transactions/:id/escalate` with sender's JWT.
+  2. Inspect transaction status.
+- **Expected Result:**
+  - Status Code: `200 OK`
+  - Response: `{ "status": "FLAGGED_FOR_REVIEW" }`
+  - Transaction appears in Admin Review Queue.
+- **Test Type:** API / Integration
+- **Priority:** Critical
+- **Status:** Passed
+
+---
+
 ## 3. Test Execution Summary
 
 | Test Case ID | Test Description | Category | Result |
 | :--- | :--- | :--- | :--- |
 | `TC-M6-001` | Low-Risk Transaction Executes Immediately (`LOW` -> `APPROVED`) | API / Balance Settlement | **PASSED** |
-| `TC-M6-002` | Medium-Risk Transaction Places Funds in Escrow (`MEDIUM` -> `FLAGGED`) | API / Escrow Hold | **PASSED** |
+| `TC-M6-002` | Medium-Risk Transaction Places Funds in Escrow (`MEDIUM` -> `CUSTOMER_VERIFICATION_REQUIRED`) | API / Escrow Hold | **PASSED** |
 | `TC-M6-003` | High-Risk Transaction Is Immediately Blocked (`HIGH` -> `BLOCKED`) | API / Security | **PASSED** |
 | `TC-M6-004` | Insufficient Balance Rejection | Validation / Balance Guard | **PASSED** |
 | `TC-M6-005` | Concurrent Double-Spend Prevention Test | Concurrency / Double Spend | **PASSED** |
 | `TC-M6-006` | Customer Queries Own Transaction History | API / History | **PASSED** |
+| `TC-M6-007` | Customer Self-Verification Settles Payment (`CONFIRM` -> `APPROVED`) | API / Self-Verification | **PASSED** |
+| `TC-M6-008` | Customer Escalates Unauthorized Payment (`ESCALATE` -> `FLAGGED`) | API / Escalation | **PASSED** |
 
-**Total Tests:** 6 | **Passed:** 6 | **Failed:** 0 | **Skipped:** 0
+**Total Tests:** 8 | **Passed:** 8 | **Failed:** 0 | **Skipped:** 0
 **Execution Status:** ALL TESTS PASSED (100% Pass Rate)
 

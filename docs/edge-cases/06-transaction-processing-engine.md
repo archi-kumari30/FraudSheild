@@ -48,19 +48,19 @@ This document specifies the technical, financial, and state machine edge cases f
 
 ---
 
-### EC-M6-003: Review Tier Transaction (`FLAGGED_FOR_REVIEW`) Escrow Hold Execution
+### EC-M6-003: Verification Tier Transaction (`CUSTOMER_VERIFICATION_REQUIRED`) Escrow Hold Execution
 - **ID:** `EC-M6-003`
 - **Scenario:** Customer initiates transfer of ₹15,000 with `availableBalance = ₹20,000` and `heldBalance = ₹0`. Fraud engine returns Score = 55 (`MEDIUM` Risk).
 - **Preconditions:** Fraud evaluation returns `MEDIUM`.
 - **Expected System Behavior:**
-  - Transaction status set to `FLAGGED_FOR_REVIEW`.
+  - Transaction status set to `CUSTOMER_VERIFICATION_REQUIRED`.
   - Sender's `availableBalance` decrements from ₹20,000 to ₹5,000.
   - Sender's `heldBalance` increments from ₹0 to ₹15,000.
   - Recipient balance is **NOT** credited.
-  - Response returns HTTP 202 Accepted with status `FLAGGED_FOR_REVIEW`.
+  - Response returns HTTP 202 Accepted with status `CUSTOMER_VERIFICATION_REQUIRED`.
 - **Handling / Mitigation:** Escrow reservation logic atomically executes `$inc: { availableBalance: -amount, heldBalance: +amount }` on sender wallet.
 - **Priority:** Critical
-- **Security Impact:** Locks funds in escrow so the sender cannot withdraw or spend them while under review.
+- **Security Impact:** Locks funds in escrow so the sender cannot withdraw or spend them while self-verification is pending.
 
 ---
 
@@ -125,3 +125,63 @@ This document specifies the technical, financial, and state machine edge cases f
 - **Handling / Mitigation:** Mongoose multi-document transactions (via replica set session) or compensating rollback logic refunds sender `availableBalance` if recipient credit fails, marking transaction `FAILED`.
 - **Priority:** Critical
 - **Security Impact:** Prevents money loss and financial discrepancy.
+
+---
+
+### EC-M6-009: Customer Confirms Self-Verification Payment with Pre-Settlement Re-Screening
+- **ID:** `EC-M6-009`
+- **Scenario:** Customer clicks "Confirm Payment" on a transaction in `CUSTOMER_VERIFICATION_REQUIRED`. Request sent to `POST /api/transactions/:id/confirm`.
+- **Preconditions:** Transaction `status === 'CUSTOMER_VERIFICATION_REQUIRED'`; user is the sender; sender has sufficient `heldBalance`.
+- **Expected System Behavior:**
+  - Status transitions atomically to `PENDING` (concurrency guard).
+  - Fresh pre-settlement fraud rule evaluation runs.
+  - Risk score remains acceptable (<= 70).
+  - Sender `heldBalance` decremented by amount; Recipient `availableBalance` credited by amount.
+  - Transaction status becomes `APPROVED`.
+  - Response returns HTTP 200 with `{ status: 'APPROVED' }`.
+- **Handling / Mitigation:** Atomic update guard and pre-settlement re-screen in `transactionService.confirmTransaction`.
+- **Priority:** Critical
+- **Security Impact:** Eliminates 24/7 admin bottleneck while ensuring fresh security validation prior to settlement.
+
+---
+
+### EC-M6-010: Pre-Settlement Re-Screening Elevates Risk to HIGH upon Confirmation
+- **ID:** `EC-M6-010`
+- **Scenario:** Customer confirms a payment, but background activity (e.g., velocity burst or concurrent malicious attempts) causes fresh rule evaluation to score >= 71 (`HIGH` risk).
+- **Preconditions:** Transaction in `CUSTOMER_VERIFICATION_REQUIRED`; fresh fraud evaluation returns `HIGH`.
+- **Expected System Behavior:**
+  - Transaction status transitions to `BLOCKED`.
+  - Held funds in sender's `heldBalance` are refunded back to sender's `availableBalance`.
+  - Recipient receives ₹0.
+  - Security audit and alert logged.
+  - Response returns `{ status: 'BLOCKED' }`.
+- **Handling / Mitigation:** Escrow refund logic in `confirmTransaction` returns held funds to availableBalance upon high-risk elevation.
+- **Priority:** Critical
+- **Security Impact:** Prevents fraudulent funds settlement even if the confirmation action was attempted.
+
+---
+
+### EC-M6-011: Concurrent Double-Click on Confirm Payment Button
+- **ID:** `EC-M6-011`
+- **Scenario:** Customer rapidly clicks "Confirm Payment" multiple times within milliseconds.
+- **Preconditions:** Two concurrent `POST /api/transactions/:id/confirm` requests.
+- **Expected System Behavior:** Only the first request matches `{ _id: transactionId, senderId: userId, status: 'CUSTOMER_VERIFICATION_REQUIRED' }` and transitions to `PENDING`. The second request fails with HTTP 400 (`"Transaction is not awaiting customer verification"`).
+- **Handling / Mitigation:** Atomic filter in `Transaction.findOneAndUpdate` guarantees strict idempotency.
+- **Priority:** High
+- **Security Impact:** Prevents duplicate settlement or race condition vulnerabilities.
+
+---
+
+### EC-M6-012: Customer Escalates Unauthorized Payment ("I Didn't Initiate This")
+- **ID:** `EC-M6-012`
+- **Scenario:** Customer spots an unrecognized transaction in `CUSTOMER_VERIFICATION_REQUIRED` and clicks "I Didn't Initiate This". Request dispatched to `POST /api/transactions/:id/escalate`.
+- **Preconditions:** Transaction `status === 'CUSTOMER_VERIFICATION_REQUIRED'`; user is the sender.
+- **Expected System Behavior:**
+  - Transaction status transitions atomically to `FLAGGED_FOR_REVIEW`.
+  - Held balance remains safely locked in sender's `heldBalance` (recipient gets ₹0).
+  - Transaction is enqueued in the Admin Review Queue (`GET /api/admin/reviews`).
+  - High-priority security alert generated.
+  - Response returns HTTP 200 with `{ status: 'FLAGGED_FOR_REVIEW' }`.
+- **Handling / Mitigation:** Ownership check `senderId === user._id` and atomic transition to `FLAGGED_FOR_REVIEW`.
+- **Priority:** Critical
+- **Security Impact:** Empowers customers to immediately quarantine unauthorized transactions for expert human investigation.

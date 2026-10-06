@@ -1,42 +1,26 @@
-import React, { useState } from 'react';
-import Navbar from '../../components/common/Navbar';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import BeneficiaryList from '../../components/customer/BeneficiaryList';
-import SendMoneyModal from '../../components/customer/SendMoneyModal';
 
 const BeneficiariesPage = () => {
-  const [isSendMoneyOpen, setIsSendMoneyOpen] = useState(false);
-  const [selectedRecipient, setSelectedRecipient] = useState(null);
+  const navigate = useNavigate();
 
   const handlePay = (recipientId) => {
-    setSelectedRecipient(recipientId);
-    setIsSendMoneyOpen(true);
+    navigate(`/send-money?recipientId=${recipientId}`);
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <Navbar />
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-serif font-bold tracking-tight text-[#17211D]">
+          Saved Beneficiaries
+        </h1>
+        <p className="text-xs sm:text-sm text-[#5A6E65] mt-1">
+          Whitelisted transfer recipients and verified payee accounts.
+        </p>
+      </div>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Address Book
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Manage your verified beneficiaries and contacts for expedited payments.
-          </p>
-        </div>
-
-        <BeneficiaryList onSelectSend={handlePay} />
-      </main>
-
-      <SendMoneyModal
-        isOpen={isSendMoneyOpen}
-        onClose={() => {
-          setIsSendMoneyOpen(false);
-          setSelectedRecipient(null);
-        }}
-        initialRecipient={selectedRecipient}
-      />
+      <BeneficiaryList onSelectSend={handlePay} />
     </div>
   );
 };

@@ -7,7 +7,7 @@ const { successResponse, errorResponse } = require('../utils/apiResponse');
  */
 const getAlerts = async (req, res, next) => {
   try {
-    const alerts = await alertService.getUserAlerts(req.user._id);
+    const alerts = await alertService.getUserAlerts(req.user._id, req.user.role);
 
     return successResponse(res, 200, 'Alerts retrieved successfully', {
       alerts

@@ -109,7 +109,7 @@ The frontend is an isolated Single Page Application (SPA) residing strictly with
 - Custom Tailwind theme configurations matching fintech branding:
   - Slate neutral palettes for structural layouts.
   - Emerald badges for `APPROVED` states.
-  - Amber badges for `FLAGGED_FOR_REVIEW` states.
+  - Amber badges for `CUSTOMER_VERIFICATION_REQUIRED` and `FLAGGED_FOR_REVIEW` states.
   - Rose/Red badges for `BLOCKED` states.
 
 ### 5.2 HTTP Communication Foundation

@@ -39,12 +39,13 @@ The objective of **Module 10 (Frontend Customer Portal)** is to build the respon
   - `SendMoneyModal.jsx`: Transfer submission form allowing selection from saved beneficiaries or entering recipient ID/email, amount in INR, and optional transfer note.
   - Immediate feedback display reflecting transaction outcome:
     - `APPROVED`: Instant green confirmation badge.
-    - `FLAGGED_FOR_REVIEW`: Informative amber notice stating funds are held in escrow pending security review.
+    - `CUSTOMER_VERIFICATION_REQUIRED`: Amber prompt indicating payment is held in escrow; customer can click "Confirm Payment" or "I Didn't Initiate This".
+    - `FLAGGED_FOR_REVIEW`: Amber/orange notice indicating transaction is under analyst investigation.
     - `BLOCKED`: Clear red security notice explaining the payment was halted.
 - Beneficiary Address Book:
   - `BeneficiaryManager.jsx`: Add new beneficiary modal, list saved contacts, delete beneficiary.
 - Transaction History Table:
-  - `TransactionList.jsx`: Chronological list of user's transfers with color-coded status badges, amounts, timestamps, and recipient details.
+  - `TransactionList.jsx`: Chronological list of user's transfers with color-coded status badges, amounts, timestamps, recipient details, and interactive actions ("Confirm Payment" and "I Didn't Initiate This" for transactions requiring customer verification).
 - Customer Fraud Alert Drawer / Panel:
   - `CustomerAlerts.jsx`: Notifications panel listing alerts for held or blocked transfers with mark-as-read capability.
 - Client Device Token Utility:
@@ -211,7 +212,7 @@ frontend/
 3. Wallet card displays accurate `availableBalance` and `heldBalance` in INR.
 4. Test deposit increases available balance in real time.
 5. Customer can add, view, and delete beneficiaries.
-6. Customer can submit a transfer; UI correctly displays green for `APPROVED`, amber for `FLAGGED_FOR_REVIEW`, and red for `BLOCKED`.
+6. Customer can submit a transfer; UI correctly displays green for `APPROVED`, amber for `CUSTOMER_VERIFICATION_REQUIRED` (with interactive Confirm and Escalate options), orange for `FLAGGED_FOR_REVIEW`, and red for `BLOCKED`.
 7. Outgoing requests include persistent `x-device-id` header.
 8. Customer alerts panel displays notifications for held and blocked transactions.
 9. Zero client-side crashes or unhandled console errors during user flows.

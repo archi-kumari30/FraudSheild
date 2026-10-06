@@ -4,7 +4,7 @@ import Modal from '../common/Modal';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../context/AuthContext';
 
-const DepositModal = ({ isOpen, onClose }) => {
+const DepositModal = ({ isOpen, onClose, onSuccess }) => {
   const { refreshWallet } = useAuth();
   const [amount, setAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -33,8 +33,11 @@ const DepositModal = ({ isOpen, onClose }) => {
     try {
       const res = await axiosClient.post('/wallet/deposit', { amount: numeric });
       if (res.success) {
-        setSuccessMsg(`Successfully added ₹${numeric.toLocaleString('en-IN')} to your wallet.`);
+        setSuccessMsg(`Successfully credited ₹${numeric.toLocaleString('en-IN')} to your Simulated Wallet.`);
         await refreshWallet();
+        if (typeof onSuccess === 'function') {
+          onSuccess(numeric);
+        }
         setTimeout(() => {
           setAmount('');
           setSuccessMsg('');
@@ -57,31 +60,34 @@ const DepositModal = ({ isOpen, onClose }) => {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Add Test Funds">
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <p className="text-xs text-slate-500">
-          FraudShield operates on simulated INR funds. Add test funds directly into your account to test payment flows and fraud detection rules.
-        </p>
+    <Modal isOpen={isOpen} onClose={handleClose} title="Add Funds to Simulated Wallet">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="p-3 rounded-lg bg-[#EAF3EF] border border-[#C8DCD2] text-[#1E473B] text-xs">
+          <strong className="font-semibold block mb-0.5">Simulated Wallet (Demo Balance)</strong>
+          <span>
+            This is a simulated internal balance used to test transfers and fraud rules. No real money or bank accounts are debited.
+          </span>
+        </div>
 
         {error && (
-          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+          <div className="p-3 rounded-lg bg-[#FBF0EF] border border-[#E6BFBD] text-[#8C3E3A] text-xs font-medium">
             {error}
           </div>
         )}
 
         {successMsg && (
-          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold">
-            {successMsg}
+          <div className="p-3 rounded-lg bg-[#EAF3EF] border border-[#C8DCD2] text-[#1E473B] text-xs font-medium flex items-center gap-2">
+            <span>{successMsg}</span>
           </div>
         )}
 
         {/* Amount Input */}
         <div>
-          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+          <label className="block text-xs font-semibold text-[#17211D] mb-1.5">
             Deposit Amount (INR)
           </label>
           <div className="relative">
-            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
+            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#5A6E65] font-semibold text-sm">
               ₹
             </span>
             <input
@@ -92,7 +98,7 @@ const DepositModal = ({ isOpen, onClose }) => {
               onChange={(e) => setAmount(e.target.value)}
               placeholder="e.g. 5000"
               disabled={isSubmitting}
-              className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm font-semibold text-slate-900"
+              className="w-full pl-8 pr-4 py-2.5 rounded-lg bg-[#FAFCFA] border border-[#D4E2DC] focus:border-[#285C4D] focus:outline-none focus:ring-1 focus:ring-[#285C4D] text-sm font-semibold text-[#17211D] placeholder-[#5A6E65]/60"
               required
             />
           </div>
@@ -100,7 +106,7 @@ const DepositModal = ({ isOpen, onClose }) => {
 
         {/* Quick Amount Buttons */}
         <div>
-          <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+          <label className="block text-[11px] font-semibold text-[#5A6E65] uppercase tracking-wider mb-2">
             Quick Select
           </label>
           <div className="grid grid-cols-4 gap-2">
@@ -110,7 +116,7 @@ const DepositModal = ({ isOpen, onClose }) => {
                 type="button"
                 onClick={() => setAmount(preset.toString())}
                 disabled={isSubmitting}
-                className="py-2 px-2.5 rounded-xl border border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/50 text-slate-700 hover:text-indigo-700 text-xs font-semibold transition-all"
+                className="py-2 px-2 rounded-lg bg-[#FAFCFA] border border-[#D4E2DC] hover:border-[#285C4D] hover:bg-[#DCEBE4] text-[#17211D] text-xs font-semibold transition-all"
               >
                 +₹{preset >= 1000 ? `${preset / 1000}k` : preset}
               </button>
@@ -118,20 +124,20 @@ const DepositModal = ({ isOpen, onClose }) => {
           </div>
         </div>
 
-        {/* Submit Button */}
-        <div className="pt-2 flex items-center justify-end gap-3">
+        {/* Action Buttons */}
+        <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#D4E2DC]">
           <button
             type="button"
             onClick={handleClose}
             disabled={isSubmitting}
-            className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold text-xs transition-colors"
+            className="px-4 py-2 rounded-lg border border-[#D4E2DC] text-[#5A6E65] hover:text-[#17211D] hover:bg-[#EDF6F1] font-medium text-xs transition-colors"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={isSubmitting}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-md shadow-indigo-200 disabled:opacity-50 transition-all"
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-[#285C4D] hover:bg-[#1d453a] text-white font-medium text-xs shadow-sm disabled:opacity-50 transition-all"
           >
             {isSubmitting ? (
               <>
@@ -141,7 +147,7 @@ const DepositModal = ({ isOpen, onClose }) => {
             ) : (
               <>
                 <PlusCircle className="w-4 h-4" />
-                <span>Confirm Deposit</span>
+                <span>Add to Simulated Wallet</span>
               </>
             )}
           </button>

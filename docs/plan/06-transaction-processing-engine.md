@@ -36,11 +36,13 @@ The objective of **Module 6 (Transaction Processing Engine)** is to orchestrate 
   3. Gathers historical telemetry and invokes Fraud Detection Engine (Module 5).
   4. Executes atomic balance update and sets status:
      - **Low Risk (0–30):** Status = `APPROVED`. Sender `availableBalance` debited; recipient `availableBalance` credited.
-     - **Medium Risk (31–70):** Status = `FLAGGED_FOR_REVIEW`. Escrow Hold: Sender `availableBalance` debited; sender `heldBalance` credited. Recipient unchanged.
+     - **Medium Risk (31–70):** Status = `CUSTOMER_VERIFICATION_REQUIRED`. Escrow Hold: Sender `availableBalance` debited; sender `heldBalance` credited. Recipient unchanged. Customer prompted to self-verify or report unauthorized.
      - **High Risk (71–100):** Status = `BLOCKED`. Zero balance deducted from sender.
-- Customer transaction history endpoints:
+- Customer transaction history and action endpoints:
   - `GET /api/transactions`: Lists authenticated customer's incoming and outgoing transactions.
   - `GET /api/transactions/:id`: Retrieves individual transaction status.
+  - `POST /api/transactions/:id/confirm`: Customer self-verifies payment. Locks transaction (`PENDING`), executes pre-settlement fraud re-evaluation, and settles to `APPROVED` or blocks to `BLOCKED` with refund.
+  - `POST /api/transactions/:id/escalate`: Customer reports unauthorized payment. Transitions status to `FLAGGED_FOR_REVIEW` for admin incident review.
 - Strict double-spending prevention and concurrency control.
 
 ### Out-of-Scope for Module 6:
@@ -89,7 +91,7 @@ The objective of **Module 6 (Transaction Processing Engine)** is to orchestrate 
   - `recipientId`: ObjectId, ref: `'User'`, required, indexed.
   - `amount`: Number, required, min: 1.
   - `currency`: String, default: `'INR'`.
-  - `status`: String, enum: `['PENDING', 'APPROVED', 'FLAGGED_FOR_REVIEW', 'BLOCKED', 'REJECTED']`, required, indexed.
+  - `status`: String, enum: `['PENDING', 'APPROVED', 'FLAGGED_FOR_REVIEW', 'CUSTOMER_VERIFICATION_REQUIRED', 'BLOCKED', 'REJECTED']`, required, indexed.
   - `riskScore`: Number, required, min: 0, max: 100.
   - `riskLevel`: String, enum: `['LOW', 'MEDIUM', 'HIGH']`, required.
   - `triggeredRules`: Array of objects (`ruleCode`, `weight`, `reason`).
@@ -105,9 +107,11 @@ The objective of **Module 6 (Transaction Processing Engine)** is to orchestrate 
 
 | Method | Path | Access | Description |
 | :--- | :--- | :---: | :--- |
-| `POST` | `/api/transactions` | Customer | Initiates transfer; returns status (`APPROVED`, `FLAGGED_FOR_REVIEW`, `BLOCKED`). |
+| `POST` | `/api/transactions` | Customer | Initiates transfer; returns status (`APPROVED`, `CUSTOMER_VERIFICATION_REQUIRED`, `BLOCKED`). |
 | `GET` | `/api/transactions` | Customer | Lists current customer's transaction history (paginated). |
 | `GET` | `/api/transactions/:id` | Customer | Retrieves single transaction status and details. |
+| `POST` | `/api/transactions/:id/confirm` | Customer | Self-verifies payment. Re-evaluates fraud rules; settles to `APPROVED` or blocks to `BLOCKED`. |
+| `POST` | `/api/transactions/:id/escalate` | Customer | Reports unauthorized payment. Transitions status to `FLAGGED_FOR_REVIEW` for admin queue. |
 
 ---
 
@@ -115,7 +119,7 @@ The objective of **Module 6 (Transaction Processing Engine)** is to orchestrate 
 
 - **SEC-M6-01 (Double-Spending Prevention):** Balance verification and reservation must be atomic. Query checks `availableBalance >= amount` inside the update condition using atomic Mongoose operators.
 - **SEC-M6-02 (Negative Balance Guard):** Available balance must never be allowed to drop below 0 under any concurrency scenario.
-- **SEC-M6-03 (Information Masking):** Responses to customer endpoints must omit specific internal fraud scoring points and rule weights to prevent adversarial reverse engineering. Customers see only the status (`APPROVED`, `FLAGGED_FOR_REVIEW`, `BLOCKED`).
+- **SEC-M6-03 (Information Masking):** Responses to customer endpoints must omit specific internal fraud scoring points and rule weights to prevent adversarial reverse engineering. Customers see only the status (`APPROVED`, `CUSTOMER_VERIFICATION_REQUIRED`, `FLAGGED_FOR_REVIEW`, `BLOCKED`).
 - **SEC-M6-04 (Self-Transfer Block):** Sender ID must not match Recipient ID.
 
 ---
@@ -177,7 +181,7 @@ backend/
 ## 14. Completion Criteria
 
 1. Low-risk transaction (Score <= 30) transitions to `APPROVED`, debits sender `availableBalance`, and credits recipient `availableBalance`.
-2. Medium-risk transaction (Score 31–70) transitions to `FLAGGED_FOR_REVIEW`, debits sender `availableBalance`, and credits sender `heldBalance`. Recipient balance is untouched.
+2. Medium-risk transaction (Score 31–70) transitions to `CUSTOMER_VERIFICATION_REQUIRED`, debits sender `availableBalance`, and credits sender `heldBalance`. Recipient balance is untouched. Customer self-verification settles or escalates transaction.
 3. High-risk transaction (Score 71–100) transitions to `BLOCKED`, zero balance is deducted.
 4. Attempting to spend more than `availableBalance` fails with HTTP 400.
 5. Customer can retrieve their own transaction history; unauthorized access to other users' transactions is blocked.

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import AdminNavbar from '../../components/admin/AdminNavbar';
+import { ShieldAlert, AlertTriangle, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import ReviewQueueTable from '../../components/admin/ReviewQueueTable';
 import CaseDetailModal from '../../components/admin/CaseDetailModal';
 import axiosClient from '../../api/axiosClient';
@@ -31,7 +31,6 @@ const AdminDashboardPage = () => {
 
   const handleInspect = async (tx) => {
     try {
-      // Fetch fresh populated case details
       const res = await axiosClient.get(`/admin/reviews/${tx._id}`);
       if (res.success && res.data?.review) {
         setSelectedCase(res.data.review);
@@ -45,47 +44,55 @@ const AdminDashboardPage = () => {
   };
 
   const handleCaseResolved = (transactionId, decision) => {
-    // Remove resolved case from local review queue state
     setReviews((prev) => prev.filter((r) => r._id !== transactionId));
     setToastMessage(
       decision === 'APPROVE'
         ? 'Transaction approved successfully. Escrow funds settled to recipient.'
         : decision === 'REJECT'
-        ? 'Transaction rejected. Escrow funds refunded to sender.'
-        : 'Queue synchronized with updated server state.'
+        ? 'Transaction rejected. Escrow funds refunded to sender available balance.'
+        : 'Review queue synchronized.'
     );
     setTimeout(() => setToastMessage(''), 4000);
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <AdminNavbar queueCount={reviews.length} />
-
-      {/* Success Notification Toast */}
+    <div className="space-y-6">
+      {/* Toast Notification */}
       {toastMessage && (
-        <div className="bg-slate-900 text-white px-4 py-3 text-xs font-semibold text-center border-b border-slate-800 flex items-center justify-center gap-2">
+        <div className="bg-[#EAF3EF] border border-[#D4E2DC] text-[#285C4D] px-4 py-3 rounded-xl text-xs font-semibold text-center flex items-center justify-center gap-2 shadow-xs">
+          <CheckCircle2 className="w-4 h-4 text-[#285C4D]" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Fraud Incident Review Queue
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Real-time queue of transactions held in escrow by deterministic security rules awaiting analyst resolution.
-          </p>
+      {/* Page Title */}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-[#17211D]">
+          Fraud Incident Review Queue
+        </h1>
+        <p className="text-xs sm:text-sm text-[#5A6E65] mt-1">
+          Transactions quarantined in escrow by deterministic security heuristics awaiting human analyst determination.
+        </p>
+      </div>
+
+      {/* Human-in-the-Loop Escrow Protocol Card */}
+      <div className="p-4 rounded-xl bg-[#FAFCFA] border border-[#D4E2DC] text-xs text-[#17211D] leading-relaxed space-y-1">
+        <div className="flex items-center gap-2 text-xs font-bold text-[#17211D]">
+          <span className="w-2 h-2 rounded-full bg-[#C89445] shrink-0" />
+          <span>Human-in-the-Loop Escrow Protocol:</span>
         </div>
+        <p className="text-[#5A6E65]">
+          When transactions trigger heuristic risk scores between 31 and 70 (Medium Risk), funds are moved from sender available balance into held balance. AI models cannot approve or reject transactions. Verified analysts must examine signals and submit mandatory written audit notes (min 10 characters) to settle or refund funds.
+        </p>
+      </div>
 
-        <ReviewQueueTable
-          transactions={reviews}
-          loading={loading}
-          onInspect={handleInspect}
-        />
-      </main>
+      <ReviewQueueTable
+        transactions={reviews}
+        loading={loading}
+        onInspect={handleInspect}
+      />
 
-      {/* Dossier Modal */}
+      {/* Case Dossier Modal */}
       <CaseDetailModal
         isOpen={isCaseModalOpen}
         onClose={() => setIsCaseModalOpen(false)}

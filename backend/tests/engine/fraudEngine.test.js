@@ -61,11 +61,11 @@ describe('Module 5: Fraud Engine Orchestrator and Scorer Tests', () => {
     expect(evaluation.triggeredRules.length).toBe(0);
   });
 
-  // Single rule trigger within MEDIUM tier (e.g. RULE_AMT_EXTREME = 35)
+  // Single rule trigger within MEDIUM tier (e.g. RULE_AMOUNT_ANOMALY = 35)
   test('Single rule trigger resulting in 35 maps to MEDIUM and FLAGGED_FOR_REVIEW', () => {
-    const transaction = { amount: 55000 };
+    const transaction = { amount: 20000 };
     const context = {
-      historyAvg: 60000,
+      historyAvg: 5000, // 20,000 / 5,000 = 4.0x (> 3x) -> +35 pts
       recent10MinTxCount: 1,
       beneficiaryAgeHours: 72,
       isKnownDevice: true,
@@ -79,7 +79,7 @@ describe('Module 5: Fraud Engine Orchestrator and Scorer Tests', () => {
     expect(evaluation.riskLevel).toBe('MEDIUM');
     expect(evaluation.recommendation).toBe('FLAGGED_FOR_REVIEW');
     expect(evaluation.triggeredRules.length).toBe(1);
-    expect(evaluation.triggeredRules[0].ruleCode).toBe('RULE_AMT_EXTREME');
+    expect(evaluation.triggeredRules[0].ruleCode).toBe('RULE_AMOUNT_ANOMALY');
   });
 
   // Invalid amount error

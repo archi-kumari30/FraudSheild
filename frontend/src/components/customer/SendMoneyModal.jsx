@@ -18,7 +18,9 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
-  const [outcome, setOutcome] = useState(null); // { status, message, transaction }
+  const [outcome, setOutcome] = useState(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationError, setVerificationError] = useState('');
 
   // Load beneficiaries for quick selection
   useEffect(() => {
@@ -32,11 +34,12 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
               const match = res.data.beneficiaries.find(
                 (b) =>
                   b.recipientAccountId?._id === initialRecipient ||
-                  b.recipientAccountId === initialRecipient
+                  b.recipientAccountId === initialRecipient ||
+                  b._id === initialRecipient
               );
               if (match) {
                 setRecipientMode('saved');
-                setSelectedRecipientId(match.recipientAccountId._id || match.recipientAccountId);
+                setSelectedRecipientId(match.recipientAccountId?._id || match.recipientAccountId);
               } else {
                 setRecipientMode('custom');
                 setCustomRecipientInput(initialRecipient);
@@ -59,19 +62,53 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
     setFormError('');
     setOutcome(null);
     setIsSubmitting(false);
+    setIsVerifying(false);
+    setVerificationError('');
   };
 
   const handleClose = () => {
-    if (isSubmitting) return;
+    if (isSubmitting || isVerifying) return;
     resetForm();
     onClose();
+  };
+
+  const handleConfirmPayment = async () => {
+    if (!outcome?.transaction?._id) return;
+    setIsVerifying(true);
+    setVerificationError('');
+    try {
+      const res = await axiosClient.post(`/transactions/${outcome.transaction._id}/confirm`);
+      if (res.success && res.data) {
+        setOutcome((prev) => ({
+          ...prev,
+          status: res.data.status || 'APPROVED',
+          transaction: res.data.transaction
+        }));
+        await refreshWallet();
+        await fetchAlerts();
+        if (onSuccess) onSuccess();
+      }
+    } catch (err) {
+      if (err.data?.status === 'BLOCKED' || err.status === 'BLOCKED') {
+        setOutcome((prev) => ({
+          ...prev,
+          status: 'BLOCKED',
+          transaction: err.data?.transaction || prev.transaction
+        }));
+        await refreshWallet();
+        await fetchAlerts();
+      } else {
+        setVerificationError(err.message || 'Verification failed. Please try again.');
+      }
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
 
-    // Prevent double submissions (EC-M10-003)
     if (isSubmitting) return;
 
     const numericAmount = parseFloat(amount);
@@ -117,13 +154,11 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
         transaction: txData
       });
 
-      // Synchronize wallet and alerts
       await refreshWallet();
       await fetchAlerts();
       if (onSuccess) onSuccess();
     } catch (err) {
       if (err.data?.status === 'BLOCKED' || err.status === 'BLOCKED') {
-        // High Risk Blocked
         setOutcome({
           status: 'BLOCKED',
           transaction: err.data?.transaction || null,
@@ -142,67 +177,106 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
-      title={outcome ? 'Transfer Receipt' : 'Send Money'}
+      title={outcome ? 'Transfer Outcome Receipt' : 'Send Payment'}
       maxWidth="max-w-lg"
     >
       {outcome ? (
-        /* Outcome View */
-        <div className="py-2 space-y-5 text-center">
+        <div className="py-2 space-y-5 text-center text-[#17211D]">
           {outcome.status === 'APPROVED' && (
             <div className="space-y-3">
-              <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-inner">
+              <div className="w-14 h-14 rounded-2xl bg-[#EAF3EF] border border-[#C8DCD2] text-[#285C4D] flex items-center justify-center mx-auto">
                 <CheckCircle2 className="w-8 h-8" />
               </div>
-              <h4 className="text-lg font-bold text-slate-900">Payment Completed!</h4>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                Your transfer of <strong className="text-slate-800">₹{parseFloat(amount).toLocaleString('en-IN')}</strong> has been approved and credited instantly.
+              <h4 className="text-lg font-bold text-[#17211D]">Payment Approved</h4>
+              <p className="text-xs text-[#5A6E65] max-w-sm mx-auto leading-relaxed">
+                Your transfer of <strong className="text-[#285C4D] font-mono font-bold">₹{parseFloat(amount).toLocaleString('en-IN')}</strong> has cleared with low risk and settled immediately.
               </p>
+            </div>
+          )}
+
+          {outcome.status === 'CUSTOMER_VERIFICATION_REQUIRED' && (
+            <div className="space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-[#FAF4EB] border border-[#EAD7BA] text-[#C89445] flex items-center justify-center mx-auto">
+                <AlertTriangle className="w-8 h-8" />
+              </div>
+              <h4 className="text-lg font-bold text-[#946625]">Additional Verification Required</h4>
+              <div className="bg-[#FAF4EB] border border-[#EAD7BA] rounded-xl p-3.5 text-left text-xs text-[#946625] leading-relaxed space-y-2">
+                <p className="font-semibold text-[#17211D]">
+                  Your payment is temporarily on hold while we verify that you initiated this transaction.
+                </p>
+                <p className="text-[#5A6E65]">
+                  FraudShield detected unusual activity. Please confirm that you initiated this payment.
+                </p>
+                <div className="text-[11px] text-[#5A6E65] space-y-0.5 pt-1 border-t border-[#EAD7BA]/60">
+                  <div>• Amount: <strong className="text-[#17211D] font-mono">₹{parseFloat(amount).toLocaleString('en-IN')}</strong> (held in escrow).</div>
+                  <div>• Recipient has received ₹0 until you confirm.</div>
+                </div>
+              </div>
+
+              {verificationError && (
+                <div className="p-2.5 rounded-lg bg-[#FBF0EF] border border-[#E6BFBD] text-[#8C3E3A] text-xs font-semibold">
+                  {verificationError}
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-center">
+                <button
+                  type="button"
+                  onClick={handleConfirmPayment}
+                  disabled={isVerifying}
+                  className="px-6 py-2.5 rounded-lg bg-[#285C4D] hover:bg-[#1d453a] text-white font-medium text-xs transition-colors shadow-xs flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isVerifying ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Verifying & Settling...</span>
+                    </>
+                  ) : (
+                    <span>Confirm Payment</span>
+                  )}
+                </button>
+              </div>
             </div>
           )}
 
           {outcome.status === 'FLAGGED_FOR_REVIEW' && (
             <div className="space-y-3">
-              <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto shadow-inner">
+              <div className="w-14 h-14 rounded-2xl bg-[#FAF4EB] border border-[#EAD7BA] text-[#C89445] flex items-center justify-center mx-auto">
                 <AlertTriangle className="w-8 h-8" />
               </div>
-              <h4 className="text-lg font-bold text-slate-900">Held in Security Escrow</h4>
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-left">
-                <p className="text-xs text-amber-900 leading-relaxed">
-                  Your transfer of <strong>₹{parseFloat(amount).toLocaleString('en-IN')}</strong> is undergoing standard security review. Your funds have been temporarily reserved in escrow and will be settled upon verification.
-                </p>
+              <h4 className="text-lg font-bold text-[#946625]">Held in Escrow for Review</h4>
+              <div className="bg-[#FAF4EB] border border-[#EAD7BA] rounded-xl p-3.5 text-left text-xs text-[#946625] leading-relaxed">
+                Your transfer of <strong className="font-semibold text-[#17211D]">₹{parseFloat(amount).toLocaleString('en-IN')}</strong> triggered security heuristics and is undergoing verification. Funds have been temporarily moved to your held balance in escrow and have not left your account.
               </div>
             </div>
           )}
 
           {outcome.status === 'BLOCKED' && (
             <div className="space-y-3">
-              <div className="w-14 h-14 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
+              <div className="w-14 h-14 rounded-2xl bg-[#FBF0EF] border border-[#E6BFBD] text-[#B65D59] flex items-center justify-center mx-auto">
                 <ShieldAlert className="w-8 h-8" />
               </div>
-              <h4 className="text-lg font-bold text-slate-900">Payment Blocked for Security</h4>
-              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-left">
-                <p className="text-xs text-rose-900 leading-relaxed">
-                  This transaction was halted to protect your account. No funds were debited from your wallet. If you believe this is in error, please contact FraudShield customer support.
-                </p>
+              <h4 className="text-lg font-bold text-[#8C3E3A]">Transaction Blocked</h4>
+              <div className="bg-[#FBF0EF] border border-[#E6BFBD] rounded-xl p-3.5 text-left text-xs text-[#8C3E3A] leading-relaxed">
+                This transaction was blocked by FraudShield security controls due to elevated risk. No funds were debited from your wallet.
               </div>
             </div>
           )}
 
-          <div className="pt-4 border-t border-slate-100 flex justify-center">
+          <div className="pt-4 border-t border-[#D4E2DC] flex justify-center">
             <button
               type="button"
               onClick={handleClose}
-              className="px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-colors"
+              className="px-6 py-2.5 rounded-lg bg-[#285C4D] hover:bg-[#1d453a] text-white font-medium text-xs transition-colors shadow-xs"
             >
               Done
             </button>
           </div>
         </div>
       ) : (
-        /* Form View */
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 text-[#17211D]">
           {formError && (
-            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+            <div className="p-3 rounded-lg bg-[#FBF0EF] border border-[#E6BFBD] text-[#8C3E3A] text-xs font-semibold">
               {formError}
             </div>
           )}
@@ -210,27 +284,27 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
           {/* Recipient Selection Toggle */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Recipient
+              <label className="text-xs font-semibold text-[#17211D]">
+                Choose Beneficiary
               </label>
-              <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[11px] font-semibold text-slate-600">
+              <div className="flex items-center gap-1 bg-[#EDF6F1] p-0.5 rounded-lg border border-[#D4E2DC] text-[11px] font-semibold text-[#5A6E65]">
                 <button
                   type="button"
                   onClick={() => setRecipientMode('saved')}
                   className={`px-2.5 py-1 rounded-md transition-all ${
-                    recipientMode === 'saved' ? 'bg-white text-indigo-600 shadow-sm' : ''
+                    recipientMode === 'saved' ? 'bg-[#FAFCFA] text-[#285C4D] shadow-xs font-bold' : ''
                   }`}
                 >
-                  Saved Contacts
+                  Saved Beneficiaries
                 </button>
                 <button
                   type="button"
                   onClick={() => setRecipientMode('custom')}
                   className={`px-2.5 py-1 rounded-md transition-all ${
-                    recipientMode === 'custom' ? 'bg-white text-indigo-600 shadow-sm' : ''
+                    recipientMode === 'custom' ? 'bg-[#FAFCFA] text-[#285C4D] shadow-xs font-bold' : ''
                   }`}
                 >
-                  Enter Details
+                  Enter ID / Email
                 </button>
               </div>
             </div>
@@ -241,7 +315,7 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
                   value={selectedRecipientId}
                   onChange={(e) => setSelectedRecipientId(e.target.value)}
                   disabled={isSubmitting}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium text-slate-800"
+                  className="w-full px-3.5 py-2.5 rounded-lg bg-[#FAFCFA] border border-[#D4E2DC] text-[#17211D] focus:border-[#285C4D] focus:ring-1 focus:ring-[#285C4D] text-sm font-medium"
                 >
                   {beneficiaries.map((b) => {
                     const id = b.recipientAccountId?._id || b.recipientAccountId;
@@ -255,12 +329,12 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
                   })}
                 </select>
               ) : (
-                <div className="p-3 rounded-xl border border-dashed border-slate-200 text-xs text-slate-500 text-center">
-                  No saved beneficiaries yet.{' '}
+                <div className="p-3.5 rounded-lg border border-dashed border-[#D4E2DC] text-xs text-[#5A6E65] text-center bg-[#F4F8F5]">
+                  No saved contacts yet.{' '}
                   <button
                     type="button"
                     onClick={() => setRecipientMode('custom')}
-                    className="text-indigo-600 font-semibold underline"
+                    className="text-[#285C4D] font-semibold underline"
                   >
                     Enter email directly
                   </button>
@@ -273,7 +347,7 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
                 onChange={(e) => setCustomRecipientInput(e.target.value)}
                 placeholder="Recipient User ID or registered Email"
                 disabled={isSubmitting}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium text-slate-800"
+                className="w-full px-3.5 py-2.5 rounded-lg bg-[#FAFCFA] border border-[#D4E2DC] text-[#17211D] placeholder-[#5A6E65]/50 focus:border-[#285C4D] focus:ring-1 focus:ring-[#285C4D] text-sm font-medium"
                 required
               />
             )}
@@ -282,18 +356,18 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
           {/* Amount Input */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              <label className="text-xs font-semibold text-[#17211D]">
                 Amount (INR)
               </label>
-              <span className="text-[11px] text-slate-400">
-                Max:{' '}
-                <strong className="text-slate-600">
+              <span className="text-[11px] text-[#5A6E65]">
+                Available:{' '}
+                <strong className="text-[#17211D] font-mono">
                   ₹{wallet?.availableBalance?.toLocaleString('en-IN') || 0}
                 </strong>
               </span>
             </div>
             <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#5A6E65] font-bold text-sm">
                 ₹
               </span>
               <input
@@ -304,7 +378,7 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="e.g. 2500"
                 disabled={isSubmitting}
-                className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-semibold text-slate-900"
+                className="w-full pl-8 pr-4 py-2.5 rounded-lg bg-[#FAFCFA] border border-[#D4E2DC] text-[#17211D] placeholder-[#5A6E65]/50 focus:border-[#285C4D] focus:ring-1 focus:ring-[#285C4D] text-sm font-semibold"
                 required
               />
             </div>
@@ -312,7 +386,7 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
 
           {/* Note Input */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-semibold text-[#17211D] mb-1.5">
               Transfer Note (Optional)
             </label>
             <input
@@ -320,26 +394,26 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
               maxLength="100"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g. Project invoice settlement"
+              placeholder="e.g. Project invoice or rent"
               disabled={isSubmitting}
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-slate-700"
+              className="w-full px-3.5 py-2 rounded-lg bg-[#FAFCFA] border border-[#D4E2DC] text-[#17211D] placeholder-[#5A6E65]/50 focus:border-[#285C4D] focus:ring-1 focus:ring-[#285C4D] text-sm"
             />
           </div>
 
           {/* Submit Actions */}
-          <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100">
+          <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#D4E2DC]">
             <button
               type="button"
               onClick={handleClose}
               disabled={isSubmitting}
-              className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold text-xs transition-colors"
+              className="px-4 py-2 rounded-lg border border-[#D4E2DC] text-[#5A6E65] hover:bg-[#EDF6F1] font-medium text-xs transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-md shadow-indigo-200 disabled:opacity-50 transition-all"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#285C4D] hover:bg-[#1d453a] text-white font-medium text-xs shadow-xs disabled:opacity-50 transition-all"
             >
               {isSubmitting ? (
                 <>

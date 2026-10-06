@@ -122,7 +122,7 @@ describe('Module 6: Transaction Processing Engine Tests', () => {
 
     expect(res.status).toBe(202);
     expect(res.body.success).toBe(true);
-    expect(res.body.data.status).toBe('FLAGGED_FOR_REVIEW');
+    expect(res.body.data.status).toBe('CUSTOMER_VERIFICATION_REQUIRED');
     expect(res.body.data.riskLevel).toBe('MEDIUM');
     expect(res.body.data.riskScore).toBe(55);
 
@@ -137,7 +137,23 @@ describe('Module 6: Transaction Processing Engine Tests', () => {
 
     // Verify Transaction status in DB
     const tx = await Transaction.findById(res.body.data.transaction._id);
-    expect(tx.status).toBe('FLAGGED_FOR_REVIEW');
+    expect(tx.status).toBe('CUSTOMER_VERIFICATION_REQUIRED');
+
+    // Customer confirms payment -> settles immediately without admin
+    const confirmRes = await request(app)
+      .post(`/api/transactions/${tx._id}/confirm`)
+      .set('Authorization', `Bearer ${sender.token}`);
+
+    expect(confirmRes.status).toBe(200);
+    expect(confirmRes.body.data.status).toBe('APPROVED');
+
+    // Post-confirmation wallet balances: held released to recipient
+    const senderWalletAfter = await Wallet.findOne({ userId: senderId });
+    expect(senderWalletAfter.availableBalance).toBe(15000);
+    expect(senderWalletAfter.heldBalance).toBe(0);
+
+    const recipientWalletAfter = await Wallet.findOne({ userId: recipientId });
+    expect(recipientWalletAfter.availableBalance).toBe(25000);
   });
 
   // TC-M6-003: High-Risk Transaction Is Immediately Blocked (HIGH -> BLOCKED)
@@ -154,7 +170,19 @@ describe('Module 6: Transaction Processing Engine Tests', () => {
       .set('Authorization', `Bearer ${sender.token}`)
       .send({ amount: 70000 });
 
-    // Transfer amount > ₹50,000 (trigger RULE_AMT_EXTREME +35)
+    // Seed prior settled transaction for sender (₹5,000) for 30-day baseline
+    await Transaction.create({
+      senderId,
+      recipientId,
+      amount: 5000,
+      currency: 'INR',
+      status: 'APPROVED',
+      riskScore: 0,
+      riskLevel: 'LOW',
+      createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+    });
+
+    // Transfer amount ₹55,000 is 11x baseline (trigger RULE_AMOUNT_ANOMALY +35)
     // Send from unknown device (trigger RULE_DEVICE_NEW +25)
     // To a brand new beneficiary < 24h with amount > 10,000 (trigger RULE_BENEFICIARY_NEW +30)
     // 35 + 25 + 30 = 90 (HIGH)

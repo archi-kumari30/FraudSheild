@@ -188,6 +188,40 @@ This document specifies the test cases for **Module 2: Authentication & Authoriz
 - **Priority:** High
 - **Status:** Passed
 
+### TC-M2-010: Cryptographic Password Reset Flow
+- **Test Case ID:** `TC-M2-010`
+- **Module ID:** `MOD-02`
+- **Test Scenario:** Valid forgot-password request generates token; reset-password allows credential update and subsequent login.
+- **Preconditions:** Registered user account.
+- **Test Data:** `POST /api/auth/forgot-password` followed by `POST /api/auth/reset-password`.
+- **Steps:**
+  1. Send forgot password request for email.
+  2. Capture generated token.
+  3. Send reset password request with token and new password.
+  4. Attempt login with new password.
+- **Expected Result:**
+  - Password updated successfully; login succeeds with new password.
+- **Test Type:** Security / Integration
+- **Priority:** High
+- **Status:** Passed
+
+---
+
+### TC-M2-011: Invalid or Expired Password Reset Token Rejection
+- **Test Case ID:** `TC-M2-011`
+- **Module ID:** `MOD-02`
+- **Test Scenario:** Invalid token submitted to `/api/auth/reset-password` is rejected with 400 Bad Request.
+- **Preconditions:** None.
+- **Test Data:** `resetToken: "invalid-or-expired-token"`
+- **Steps:**
+  1. Send `POST /api/auth/reset-password` with invalid token.
+- **Expected Result:**
+  - Status Code: `400 Bad Request`
+  - Error: `"Invalid or expired password reset token"`.
+- **Test Type:** Security
+- **Priority:** High
+- **Status:** Passed
+
 ---
 
 ## 3. Test Execution Summary
@@ -203,6 +237,8 @@ This document specifies the test cases for **Module 2: Authentication & Authoriz
 | `TC-M2-007` | Missing Authorization Header Rejection | Security | **PASSED** |
 | `TC-M2-008` | Role Guard Blocks Customer from Admin Route | Security / RBAC | **PASSED** |
 | `TC-M2-009` | Admin Seed Script Successfully Provisions Default Administrator | Integration / Script | **PASSED** |
+| `TC-M2-010` | Cryptographic Password Reset Flow | Security / Integration | **PASSED** |
+| `TC-M2-011` | Invalid or Expired Password Reset Token Rejection | Security | **PASSED** |
 | `EC-M2-002` | Malformed Email Rejection | Validation | **PASSED** |
 | `EC-M2-003` | Weak Password Rejection | Validation | **PASSED** |
 | `EC-M2-006` | Non-Existent Email Generic Error (Enumeration Defense) | Security | **PASSED** |
@@ -210,6 +246,6 @@ This document specifies the test cases for **Module 2: Authentication & Authoriz
 | `EC-M2-009` | Expired Token Rejection | Security | **PASSED** |
 | `EC-M2-011` | Inactive User Account Rejection | Security / Account State | **PASSED** |
 
-**Total Tests:** 15 | **Passed:** 15 | **Failed:** 0 | **Skipped:** 0
+**Total Tests:** 17 | **Passed:** 17 | **Failed:** 0 | **Skipped:** 0
 **Execution Status:** ALL TESTS PASSED (100% Pass Rate)
 

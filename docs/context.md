@@ -141,6 +141,33 @@ FraudShield/
 └── docs/          # Sovereign project specifications & documentation
 ```
 
+### Modular Monolith Backend Structure:
+```
+backend/src/
+├── controllers/            # HTTP request/response orchestration
+├── services/               # Core business & domain logic
+├── repositories/           # Data persistence and query layer
+├── models/                 # Mongoose schemas
+├── routes/                 # Express route definitions
+├── middlewares/            # Auth guards, device context, error handling
+├── validators/             # Joi request validation schemas
+├── fraud/                  # Independent fraud detection subsystem
+│   ├── rules/
+│   │   ├── amountRule.js
+│   │   ├── velocityRule.js
+│   │   ├── deviceRule.js
+│   │   ├── beneficiaryRule.js
+│   │   ├── failedAttemptsRule.js
+│   │   └── dormantAccountRule.js
+│   ├── fraudEngine.js
+│   ├── riskCalculator.js
+│   └── contextCollector.js
+├── audit/                  # Audit logging subsystem
+├── config/                 # Env configuration & database connection
+├── utils/                  # Utility helpers and API response formatters
+└── tests/                  # Jest & Supertest automated test suites
+```
+
 ### High-Level Architectural Flow:
 
 ```
@@ -154,7 +181,7 @@ FraudShield/
            │
    ┌───────┴────────────────────────┐
    ▼                                ▼
-[ Deterministic Fraud Engine ]    [ MongoDB Database ]
+[ Deterministic Fraud Engine ]    [ Repositories / MongoDB ]
    │                                (Mongoose Models)
    │ (Rules, Scoring, Tiers)
    ▼
@@ -167,6 +194,7 @@ FraudShield/
 1. **Frontend-to-Database Isolation:** The frontend must NEVER connect directly to MongoDB. All data access occurs through authenticated REST APIs.
 2. **Credential Isolation:** The frontend must NEVER contain Gemini API credentials, JWT signing secrets, or database connection strings.
 3. **Engine Isolation:** Fraud rule evaluation logic must reside exclusively on the backend. No client-side fraud evaluation is permitted.
+4. **Independent Fraud Logic:** Fraud heuristics and scoring calculations are isolated in `fraud/` and remain completely decoupled from controllers.
 
 ---
 
@@ -216,7 +244,7 @@ $$\text{finalScore} = \min(\text{totalRuleScore}, 100)$$
 | Risk Tier | Score Range | System Action | Transaction Status | Ledger & Balance Impact |
 | :---: | :---: | :---: | :---: | :--- |
 | **LOW** | **0 – 30** | **`APPROVE`** | `APPROVED` | Immediate atomic transfer: Sender `availableBalance` debited; Recipient `availableBalance` credited. |
-| **MEDIUM** | **31 – 70** | **`REVIEW`** | `FLAGGED_FOR_REVIEW` | **Escrow Hold:** Sender `availableBalance` debited; Sender `heldBalance` credited. Recipient balance unchanged. Enqueued for Admin. |
+| **MEDIUM** | **31 – 70** | **`VERIFY`** | `CUSTOMER_VERIFICATION_REQUIRED` | **Escrow Hold:** Sender `availableBalance` debited; Sender `heldBalance` credited. Recipient balance unchanged. Enqueued for Customer Self-Verification. |
 | **HIGH** | **71 – 100** | **`BLOCK`** | `BLOCKED` | **Immediate Halt:** Zero balance deducted from sender. Alert generated; transaction rejected. |
 
 The deterministic fraud engine is the sole, authoritative source of this decision.
@@ -225,12 +253,13 @@ The deterministic fraud engine is the sole, authoritative source of this decisio
 
 ## 10. Escrow / Held Balance Specification
 
-When a transaction is classified as `FLAGGED_FOR_REVIEW`:
+When a transaction is classified as `CUSTOMER_VERIFICATION_REQUIRED` (or escalated to `FLAGGED_FOR_REVIEW`):
 1. **Fund Reservation:** The transaction amount is atomically transferred from the sender's `availableBalance` to their `heldBalance`.
-2. **Double-Spend Prevention:** The held funds are inaccessible to the sender for subsequent transfers or withdrawals while the review is active.
+2. **Double-Spend Prevention:** The held funds are inaccessible to the sender for subsequent transfers or withdrawals while the verification or review is active.
 3. **Resolution Pathways:**
-   - **Admin Approves:** Sender `heldBalance` is debited by amount; Recipient `availableBalance` is credited by amount. Status updates to `APPROVED`.
-   - **Admin Rejects:** Sender `heldBalance` is debited by amount; Sender `availableBalance` is credited by amount (refunded). Status updates to `REJECTED`.
+   - **Customer Self-Verification (`POST /api/transactions/:id/confirm`):** Atomically locks the transaction (`PENDING`), re-evaluates risk. If acceptable, sender `heldBalance` is debited and recipient `availableBalance` is credited (status becomes `APPROVED`). If elevated to HIGH, sender `heldBalance` is refunded to sender `availableBalance` (status becomes `BLOCKED`).
+   - **Customer Escalation (`POST /api/transactions/:id/escalate`):** If customer reports "I Didn't Initiate This", status transitions to `FLAGGED_FOR_REVIEW` and is enqueued into the Admin Review Queue.
+   - **Admin Review (`POST /api/admin/reviews/:id/resolve`):** For escalated cases, Admin manually approves (sender `heldBalance` debited, recipient `availableBalance` credited; status `APPROVED`) or rejects (sender `heldBalance` debited, sender `availableBalance` credited / refunded; status `REJECTED`).
 4. **Scope Boundary:** This is an internal ledger escrow simulation, not a multi-currency or commercial banking clearinghouse.
 
 ---
@@ -310,7 +339,7 @@ The frontend is an autonomous Single Page Application (SPA) built with React, Vi
 ### Responsibilities:
 - Deliver intuitive, responsive user experiences for both `customer` and `admin` personas.
 - Perform client-side form validation before API submission.
-- Display transparent transaction statuses (`APPROVED`, `FLAGGED_FOR_REVIEW`, `BLOCKED`, `REJECTED`).
+- Display transparent transaction statuses (`APPROVED`, `CUSTOMER_VERIFICATION_REQUIRED`, `FLAGGED_FOR_REVIEW`, `BLOCKED`, `REJECTED`).
 - Provide the customer with wallet management, beneficiary controls, and security alerts.
 - Provide the admin with real-time incident queues, risk score visualizations, on-demand AI investigation panels, and review resolution forms.
 
@@ -422,3 +451,31 @@ If future requirements evolve or conflict with this context document:
 3. **Do not alter code or architecture prematurely.**
 4. **Once the stakeholder approves the change, update `docs/FraudShield_SRS.md` and `docs/context.md` first.**
 5. **Only proceed to implementation after documentation is locked.**
+
+---
+
+## 21. UI/UX Standards & Operational Experience (BizOS Visual Baseline)
+
+1. **Zero-Emoji Rule:** To ensure FraudShield presents as an industrial fintech platform rather than a prototype, consumer emojis are strictly prohibited across all customer, public, and administrative interfaces. All visual affordances must use official SVG iconography (Lucide React).
+2. **BizOS Visual Palette & Architecture:** 
+   - Base canvas background: Pale mint / sage `#EDF6F1`
+   - Primary action & brand: Deep muted forest green `#285C4D`
+   - Typography & high-contrast elements: Charcoal `#17211D`
+   - Card surfaces: Warm crisp white `#FAFCFA`
+   - Secondary containers & subtle accents: Soft mint `#DCEBE4`
+   - Borders: Soft green-gray `#D4E2DC`
+   - Warning indicator: Warm amber `#C89445` (Medium Risk / Review)
+   - Danger indicator: Muted crimson `#B65D59` (High Risk / Blocked)
+   - Restrained elevation: Subtle `shadow-sm`, generous whitespace, clean geometric layouts, no bright blue SaaS styling, no purple gradients, no excessive glassmorphism.
+3. **Public Landing Page:**
+   - Nav: FraudShield | Product, How It Works, Security, For Analysts | Sign In, Get Started.
+   - Hero: "REAL-TIME PAYMENT SECURITY" - "Detect suspicious payments before money moves."
+   - Realistic interactive preview showcasing transaction evaluation, risk scores, rule breakdowns, and decisions (no fake statistics).
+4. **Strict Interface Segregation:** Customer accounts can never view administrative queue telemetry, internal rule weight thresholds, or admin tools. Admins access a dedicated fraud operations console.
+5. **Interactive Explainability:** Transaction details and investigation pages clearly explain WHY every decision was reached through rule breakdowns (+35 Extreme Amount, etc.).
+6. **Mandatory Analyst Notes:** Escrow case resolutions (`APPROVE` or `REJECT`) enforce a minimum 10-character rationale to maintain regulatory auditability.
+7. **Definition of Done Demo Scenarios:**
+   - Scenario 1: ₹2,000, Known device, Known beneficiary -> LOW, APPROVED
+   - Scenario 2: ₹15,000, New device (with additional risk factor) -> MEDIUM, CUSTOMER_VERIFICATION_REQUIRED (Customer self-verification: "Confirm Payment" -> re-evaluated and APPROVED, or "I Didn't Initiate This" -> FLAGGED_FOR_REVIEW escalated to Admin Review)
+   - Scenario 3: ₹60,000, New device, New beneficiary -> HIGH, BLOCKED
+

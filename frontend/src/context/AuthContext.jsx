@@ -16,8 +16,10 @@ export const AuthProvider = ({ children }) => {
     if (!token) return;
     try {
       const res = await axiosClient.get('/wallet');
-      if (res.success && res.data?.wallet) {
-        setWallet(res.data.wallet);
+      if (res.success && res.data) {
+        const walletData = res.data.wallet || res.data;
+        setWallet(walletData);
+        return walletData;
       }
     } catch (err) {
       console.warn('Failed to refresh wallet:', err.message);
@@ -60,8 +62,9 @@ export const AuthProvider = ({ children }) => {
       // Fetch wallet right after login
       try {
         const walletRes = await axiosClient.get('/wallet');
-        if (walletRes.success && walletRes.data?.wallet) {
-          setWallet(walletRes.data.wallet);
+        if (walletRes.success && walletRes.data) {
+          const walletData = walletRes.data.wallet || walletRes.data;
+          setWallet(walletData);
         }
       } catch (e) {
         // wallet will refresh on mount
@@ -73,23 +76,15 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (name, email, password) => {
     const res = await axiosClient.post('/auth/register', { name, email, password });
-    if (res.success && res.data) {
-      const { token: newToken, user: userData } = res.data;
-      localStorage.setItem('fraudshield_token', newToken);
-      localStorage.setItem('fraudshield_user', JSON.stringify(userData));
-      setToken(newToken);
-      setUser(userData);
-      try {
-        const walletRes = await axiosClient.get('/wallet');
-        if (walletRes.success && walletRes.data?.wallet) {
-          setWallet(walletRes.data.wallet);
-        }
-      } catch (e) {
-        // wallet will refresh on mount
-      }
-      return userData;
-    }
-    throw new Error(res.message || 'Registration failed');
+    return res;
+  };
+
+  const forgotPassword = async (email) => {
+    return await axiosClient.post('/auth/forgot-password', { email });
+  };
+
+  const resetPassword = async (email, resetToken, newPassword) => {
+    return await axiosClient.post('/auth/reset-password', { email, resetToken, newPassword });
   };
 
   const logout = () => {
@@ -120,6 +115,8 @@ export const AuthProvider = ({ children }) => {
     isAdmin: user?.role === 'admin',
     login,
     register,
+    forgotPassword,
+    resetPassword,
     logout,
     refreshWallet,
     updateBalances

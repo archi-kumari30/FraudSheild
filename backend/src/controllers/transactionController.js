@@ -34,6 +34,15 @@ const createTransaction = async (req, res, next) => {
       });
     }
 
+    if (result.status === 'CUSTOMER_VERIFICATION_REQUIRED') {
+      return successResponse(res, 202, 'Additional verification is required for this payment.', {
+        transaction: result.transaction,
+        status: result.status,
+        riskScore: result.riskScore,
+        riskLevel: result.riskLevel
+      });
+    }
+
     if (result.status === 'FLAGGED_FOR_REVIEW') {
       return successResponse(res, 202, 'Transaction held in security escrow pending review', {
         transaction: result.transaction,
@@ -73,7 +82,7 @@ const createTransaction = async (req, res, next) => {
  */
 const getTransactions = async (req, res, next) => {
   try {
-    const transactions = await transactionService.getUserTransactions(req.user._id);
+    const transactions = await transactionService.getUserTransactions(req.user._id, req.user.role);
 
     return successResponse(res, 200, 'Transactions retrieved successfully', {
       transactions
@@ -108,8 +117,64 @@ const getTransactionById = async (req, res, next) => {
   }
 };
 
+/**
+ * Customer confirms that they personally initiated the payment
+ * POST /api/transactions/:id/confirm
+ */
+const confirmTransaction = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const result = await transactionService.confirmTransaction(
+      req.user._id,
+      id,
+      req.deviceContext
+    );
+
+    return successResponse(res, 200, result.message, {
+      status: result.status,
+      transaction: result.transaction
+    });
+  } catch (error) {
+    if (error.status) {
+      return errorResponse(res, error.status, error.message, error.code);
+    }
+    next(error);
+  }
+};
+
+/**
+ * Customer reports they did not initiate payment or escalates to Fraud Operations
+ * POST /api/transactions/:id/escalate
+ */
+const escalateTransaction = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const result = await transactionService.escalateTransaction(
+      req.user._id,
+      id,
+      reason,
+      req.deviceContext
+    );
+
+    return successResponse(res, 200, result.message, {
+      status: result.status,
+      transaction: result.transaction
+    });
+  } catch (error) {
+    if (error.status) {
+      return errorResponse(res, error.status, error.message, error.code);
+    }
+    next(error);
+  }
+};
+
 module.exports = {
   createTransaction,
   getTransactions,
-  getTransactionById
+  getTransactionById,
+  confirmTransaction,
+  escalateTransaction
 };

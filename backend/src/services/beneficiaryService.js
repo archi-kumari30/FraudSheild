@@ -14,7 +14,7 @@ const addBeneficiary = async (userId, recipientEmail, nickname) => {
   // 1. Verify recipient user exists
   const recipientUser = await User.findOne({ email: normalizedEmail });
   if (!recipientUser) {
-    const error = new Error('Recipient user not found');
+    const error = new Error('No FraudShield account found with this email. Ask the recipient to create an account first.');
     error.status = 404;
     error.code = 'RECIPIENT_NOT_FOUND';
     throw error;

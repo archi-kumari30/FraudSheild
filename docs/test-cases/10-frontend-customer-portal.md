@@ -113,10 +113,10 @@ This document specifies the UI, component, and user journey test cases for **Mod
 - **Steps:**
   1. Submit transfer of ₹12,000 to new beneficiary.
 - **Expected Result:**
-  - Modal displays amber shield badge: `"Transaction Under Security Review"`.
-  - Notice explains funds are held in escrow pending standard verification.
+  - Modal displays amber shield badge: `"Payment Verification Required"`.
+  - Notice explains funds are held in escrow pending customer confirmation.
   - `availableBalance` decreases by ₹12,000; `heldBalance` increases by ₹12,000.
-  - History table shows amber `FLAGGED_FOR_REVIEW` badge.
+  - History table shows amber `CUSTOMER_VERIFICATION_REQUIRED` badge with "Confirm Payment" and "I Didn't Initiate This" action buttons.
 - **Test Type:** UI / Integration
 - **Priority:** High
 - **Status:** Passed

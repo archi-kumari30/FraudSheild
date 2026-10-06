@@ -37,6 +37,7 @@ const errorResponse = (res, statusCode, message, code = 'ERROR', details = null)
 
   if (details !== null && details !== undefined) {
     payload.error.details = details;
+    payload.data = details;
   }
 
   return res.status(statusCode).json(payload);

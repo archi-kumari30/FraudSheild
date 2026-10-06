@@ -18,7 +18,7 @@
 
 ## 1. Module Objective
 
-The objective of **Module 11 (Frontend Analyst Dashboard)** is to build the administrative operations interface for authenticated `admin` users. It provides real-time transaction monitoring, detailed explainability inspection for triggered fraud rules, an interactive review queue for transactions held in escrow (`FLAGGED_FOR_REVIEW`), human-in-the-loop manual resolution workflows (`APPROVE` / `REJECT`), an on-demand Gemini AI investigation co-pilot panel, and an immutable security audit trail explorer.
+The objective of **Module 11 (Frontend Analyst Dashboard)** is to build the administrative operations interface for authenticated `admin` users. It provides real-time transaction monitoring, detailed explainability inspection for triggered fraud rules, an interactive review queue for escalated transactions held in escrow (`FLAGGED_FOR_REVIEW`), human-in-the-loop manual resolution workflows (`APPROVE` / `REJECT`), an on-demand Gemini AI investigation co-pilot panel, and an immutable security audit trail explorer.
 
 ---
 
@@ -29,7 +29,7 @@ The objective of **Module 11 (Frontend Analyst Dashboard)** is to build the admi
   - `AdminRoute.jsx`: Route guard verifying `user.role === 'admin'`; customer tokens are redirected with an access denied notice.
   - `AdminLayout.jsx`: Top navigation with review queue counter badge, audit logs link, and admin profile summary.
 - Incident & Review Queue View (`AnalystDashboard.jsx`):
-  - Filterable live table of transactions in `FLAGGED_FOR_REVIEW` and `BLOCKED` status.
+  - Filterable live table of escalated transactions in `FLAGGED_FOR_REVIEW` and blocked transactions in `BLOCKED` status.
   - Color-coded badges for Risk Tiers:
     - Low: Green (`0 – 30`)
     - Medium: Amber (`31 – 70`)
@@ -179,7 +179,7 @@ frontend/
 ## 14. Completion Criteria
 
 1. Only users with `role === 'admin'` can access `/admin/*` routes; customers are redirected with 403.
-2. Review queue lists all `FLAGGED_FOR_REVIEW` transactions in real time.
+2. Review queue lists escalated `FLAGGED_FOR_REVIEW` transactions in real time.
 3. Case detail modal displays accurate rule breakdown, weights, and device context.
 4. Clicking "Analyze with Gemini" triggers API, renders structured summary and checklist, and shows graceful fallback when AI is mocked offline.
 5. Submitting `APPROVE` or `REJECT` with notes successfully calls backend, settles escrow balance, updates transaction state, and removes item from pending queue.

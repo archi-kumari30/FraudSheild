@@ -131,3 +131,14 @@ This document specifies the technical and operational edge cases for **Module 7:
 - **Handling / Mitigation:** Service updates alert matching both `_id: alertId` and `userId: req.user.id`.
 - **Priority:** High
 - **Security Impact:** Prevents IDOR unauthorized alert tampering.
+
+---
+
+### EC-M7-010: Attempting to Resolve a Transaction Awaiting Customer Verification
+- **ID:** `EC-M7-010`
+- **Scenario:** Admin attempts to manually resolve a transaction with `status === 'CUSTOMER_VERIFICATION_REQUIRED'` that has not been escalated by the customer.
+- **Preconditions:** Transaction `status: "CUSTOMER_VERIFICATION_REQUIRED"`.
+- **Expected System Behavior:** Resolution rejected with HTTP 400 Bad Request (`"Transaction is pending customer verification and has not been escalated for admin review"`).
+- **Handling / Mitigation:** Review resolution service strictly requires `transaction.status === 'FLAGGED_FOR_REVIEW'`. Non-escalated transactions remain in customer verification hands.
+- **Priority:** High
+- **Security Impact:** Preserves autonomy of the customer self-verification workflow and prevents premature administrative intervention.

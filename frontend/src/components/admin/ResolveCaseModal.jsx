@@ -35,7 +35,6 @@ const ResolveCaseModal = ({ isOpen, onClose, transaction, onResolved }) => {
         onClose();
       }
     } catch (err) {
-      // EC-M11-002: Concurrent Admin Resolution (409 Conflict)
       if (err.status === 409 || err.code === 'ALREADY_RESOLVED') {
         setError('This transaction has already been resolved by another administrator.');
         setTimeout(() => {
@@ -58,26 +57,26 @@ const ResolveCaseModal = ({ isOpen, onClose, transaction, onResolved }) => {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Manual Review Decision" maxWidth="max-w-lg">
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <Modal isOpen={isOpen} onClose={handleClose} title="Review Case — Escrow Determination" maxWidth="max-w-lg">
+      <form onSubmit={handleSubmit} className="space-y-5">
         {error && (
-          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
+          <div className="p-3.5 rounded-xl bg-[#FBF0EF] border border-[#F2D6D3] text-[#8C3E3A] text-xs font-semibold flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-[#B65D59]" />
             <span>{error}</span>
           </div>
         )}
 
         {/* Transaction Summary Card */}
-        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs">
+        <div className="p-4 rounded-xl bg-[#F4F8F5] border border-[#D4E2DC] flex items-center justify-between text-xs">
           <div>
-            <span className="text-slate-400 block font-medium">Transaction Amount</span>
-            <span className="text-base font-extrabold text-slate-900">
+            <span className="text-[#5A6E65] block font-medium">Transaction Amount</span>
+            <span className="text-base font-extrabold text-[#17211D]">
               ₹{transaction.amount?.toLocaleString('en-IN')}
             </span>
           </div>
           <div className="text-right">
-            <span className="text-slate-400 block font-medium">Risk Score</span>
-            <span className="text-base font-extrabold text-amber-600">
+            <span className="text-[#5A6E65] block font-medium">Risk Score</span>
+            <span className="text-base font-extrabold text-[#946625]">
               {transaction.riskScore}/100
             </span>
           </div>
@@ -85,49 +84,55 @@ const ResolveCaseModal = ({ isOpen, onClose, transaction, onResolved }) => {
 
         {/* Decision Toggle */}
         <div>
-          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-            Action Decision
+          <label className="block text-xs font-semibold text-[#17211D] uppercase tracking-wider mb-2">
+            Determination Decision
           </label>
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
               onClick={() => setDecision('APPROVE')}
               disabled={isSubmitting}
-              className={`p-3 rounded-xl border flex items-center justify-center gap-2 font-bold text-xs transition-all ${
+              className={`p-3.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 font-bold text-xs transition-colors ${
                 decision === 'APPROVE'
-                  ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm'
-                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                  ? 'bg-[#EAF3EF] border-[#285C4D] text-[#285C4D] shadow-xs'
+                  : 'bg-white border-[#D4E2DC] text-[#5A6E65] hover:bg-[#F4F8F5]'
               }`}
             >
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>Approve (Settle Escrow)</span>
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-[#285C4D]" />
+                <span>Approve Payment</span>
+              </div>
+              <span className="text-[10px] font-normal text-[#5A6E65]">Release escrow to recipient</span>
             </button>
 
             <button
               type="button"
               onClick={() => setDecision('REJECT')}
               disabled={isSubmitting}
-              className={`p-3 rounded-xl border flex items-center justify-center gap-2 font-bold text-xs transition-all ${
+              className={`p-3.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 font-bold text-xs transition-colors ${
                 decision === 'REJECT'
-                  ? 'bg-rose-50 border-rose-500 text-rose-700 shadow-sm'
-                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                  ? 'bg-[#FBF0EF] border-[#B65D59] text-[#8C3E3A] shadow-xs'
+                  : 'bg-white border-[#D4E2DC] text-[#5A6E65] hover:bg-[#F4F8F5]'
               }`}
             >
-              <XCircle className="w-4 h-4 text-rose-600" />
-              <span>Reject (Refund Sender)</span>
+              <div className="flex items-center gap-1.5">
+                <XCircle className="w-4 h-4 text-[#B65D59]" />
+                <span>Reject Payment</span>
+              </div>
+              <span className="text-[10px] font-normal text-[#5A6E65]">Refund held funds to sender</span>
             </button>
           </div>
         </div>
 
-        {/* Mandatory Resolution Notes (EC-M11-004, TC-M11-006) */}
+        {/* Mandatory Resolution Notes */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+            <label className="text-xs font-semibold text-[#17211D] uppercase tracking-wider">
               Mandatory Resolution Notes
             </label>
             <span
               className={`text-[11px] font-semibold ${
-                isValidNotes ? 'text-emerald-600' : 'text-slate-400'
+                isValidNotes ? 'text-[#285C4D]' : 'text-[#8C3E3A]'
               }`}
             >
               {notesTrimmed.length}/10 min characters
@@ -137,30 +142,30 @@ const ResolveCaseModal = ({ isOpen, onClose, transaction, onResolved }) => {
             rows="3"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Document reasoning (e.g. Identity verified via phone call, confirmed beneficiary relationship...)"
+            placeholder="Document detailed rationale for audit trail (e.g. Identity verified via telephonic check with sender, confirmed beneficiary invoice...)"
             disabled={isSubmitting}
-            className="w-full p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs font-medium text-slate-800"
+            className="w-full p-3 rounded-xl bg-white border border-[#D4E2DC] text-xs text-[#17211D] placeholder-[#5A6E65]/60 focus:outline-none focus:border-[#285C4D] focus:ring-1 focus:ring-[#285C4D] font-medium"
             required
           />
         </div>
 
-        {/* Submit Buttons */}
-        <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100">
+        {/* Action Buttons */}
+        <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#D4E2DC]">
           <button
             type="button"
             onClick={handleClose}
             disabled={isSubmitting}
-            className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold text-xs"
+            className="px-4 py-2.5 rounded-xl border border-[#D4E2DC] text-[#5A6E65] hover:bg-[#F4F8F5] font-semibold text-xs transition-colors"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={isSubmitting || !isValidNotes}
-            className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-white font-semibold text-xs shadow-md transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+            className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl font-bold text-xs shadow-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
               decision === 'APPROVE'
-                ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
-                : 'bg-rose-600 hover:bg-rose-700 shadow-rose-200'
+                ? 'bg-[#285C4D] hover:bg-[#20493D] text-white'
+                : 'bg-[#B65D59] hover:bg-[#9B4E4A] text-white'
             }`}
           >
             {isSubmitting ? (
@@ -169,7 +174,7 @@ const ResolveCaseModal = ({ isOpen, onClose, transaction, onResolved }) => {
                 <span>Executing Settlement...</span>
               </>
             ) : (
-              <span>Confirm {decision === 'APPROVE' ? 'Approval' : 'Rejection'}</span>
+              <span>{decision === 'APPROVE' ? 'Confirm Approve Payment' : 'Confirm Reject Payment'}</span>
             )}
           </button>
         </div>

@@ -309,4 +309,84 @@ describe('Module 2: Authentication & Authorization Tests', () => {
     expect(loginRes.status).toBe(403);
     expect(loginRes.body.error.code).toBe('ACCOUNT_INACTIVE');
   });
+
+  // TC-M2-007: Forgot Password Request & Token Generation
+  test('TC-M2-007: Forgot password request generates secure reset token for registered account', async () => {
+    await request(app).post('/api/auth/register').send({
+      name: 'Reset Test',
+      email: 'reset.user@example.com',
+      password: 'OldPassword123!'
+    });
+
+    const res = await request(app)
+      .post('/api/auth/forgot-password')
+      .send({ email: 'reset.user@example.com' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.resetToken).toBeDefined();
+
+    // Verify non-existent email returns safe generic response
+    const unknownRes = await request(app)
+      .post('/api/auth/forgot-password')
+      .send({ email: 'unknown.user@example.com' });
+
+    expect(unknownRes.status).toBe(200);
+    expect(unknownRes.body.data.resetToken).toBeNull();
+  });
+
+  // TC-M2-008: Password Reset Completion & Authentication Verification
+  test('TC-M2-008: Reset password with valid token updates password and allows login with new credentials', async () => {
+    await request(app).post('/api/auth/register').send({
+      name: 'Reset Confirm',
+      email: 'reset.confirm@example.com',
+      password: 'OldPassword123!'
+    });
+
+    const forgotRes = await request(app)
+      .post('/api/auth/forgot-password')
+      .send({ email: 'reset.confirm@example.com' });
+
+    const token = forgotRes.body.data.resetToken;
+
+    // Reset password with new password
+    const resetRes = await request(app)
+      .post('/api/auth/reset-password')
+      .send({
+        token,
+        newPassword: 'BrandNewPassword123!'
+      });
+
+    expect(resetRes.status).toBe(200);
+    expect(resetRes.body.success).toBe(true);
+
+    // Old password should fail
+    const oldLogin = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'reset.confirm@example.com',
+        password: 'OldPassword123!'
+      });
+    expect(oldLogin.status).toBe(401);
+
+    // New password should succeed
+    const newLogin = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'reset.confirm@example.com',
+        password: 'BrandNewPassword123!'
+      });
+    expect(newLogin.status).toBe(200);
+    expect(newLogin.body.data.token).toBeDefined();
+
+    // Reusing token must fail
+    const reusedRes = await request(app)
+      .post('/api/auth/reset-password')
+      .send({
+        token,
+        newPassword: 'AnotherPassword123!'
+      });
+    expect(reusedRes.status).toBe(400);
+    expect(reusedRes.body.error.code).toBe('INVALID_RESET_TOKEN');
+  });
 });

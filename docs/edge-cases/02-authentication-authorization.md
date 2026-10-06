@@ -154,3 +154,25 @@ This document specifies the technical and operational edge cases for **Module 2:
 - **Handling / Mitigation:** Schema validation checks required presence of `email` and `password`.
 - **Priority:** Low
 - **Security Impact:** Protects against unhandled null-reference runtime exceptions.
+
+---
+
+### EC-M2-013: Expired or Malformed Password Reset Token
+- **ID:** `EC-M2-013`
+- **Scenario:** User attempts to reset password using an expired or forged reset token.
+- **Preconditions:** Token was generated >15 minutes ago or is tampered with.
+- **Expected System Behavior:** Request is rejected with HTTP 400 Bad Request.
+- **Handling / Mitigation:** Controller checks SHA-256 hash match and `passwordResetExpires > Date.now()`. Returns `{ success: false, error: { message: "Invalid or expired password reset token", code: "INVALID_RESET_TOKEN" } }`.
+- **Priority:** High
+- **Security Impact:** Prevents credential hijacking via stale or forged recovery tokens.
+
+---
+
+### EC-M2-014: Non-Existent Account Forgot Password Request (Account Enumeration Defense)
+- **ID:** `EC-M2-014`
+- **Scenario:** User requests password reset for an unregistered or non-existent email address.
+- **Preconditions:** No user account exists with the provided email.
+- **Expected System Behavior:** System returns identical success confirmation message without revealing whether the email exists.
+- **Handling / Mitigation:** Controller returns generic success message: `"If that email is registered, password reset instructions have been dispatched."`
+- **Priority:** Medium
+- **Security Impact:** Prevents account enumeration through the password recovery endpoint.
