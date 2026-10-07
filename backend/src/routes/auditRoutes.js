@@ -6,6 +6,7 @@ const { authenticateToken, authorizeRole } = require('../middleware/authMiddlewa
 // All audit log endpoints are strictly admin-only
 router.use(authenticateToken, authorizeRole(['admin']));
 
+router.get('/verify', auditController.verifyIntegrity);
 router.get('/', auditController.getAuditLogs);
 
 module.exports = router;

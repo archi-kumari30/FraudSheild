@@ -41,6 +41,19 @@ const userSchema = new mongoose.Schema(
     passwordResetExpires: {
       type: Date,
       default: null
+    },
+    // Step-Up Adaptive Transaction PIN
+    transactionPinHash: {
+      type: String,
+      default: null
+    },
+    pinFailedAttempts: {
+      type: Number,
+      default: 0
+    },
+    pinLockedUntil: {
+      type: Date,
+      default: null
     }
   },
   {
@@ -50,6 +63,9 @@ const userSchema = new mongoose.Schema(
         delete ret.passwordHash;
         delete ret.passwordResetToken;
         delete ret.passwordResetExpires;
+        delete ret.transactionPinHash;
+        delete ret.pinFailedAttempts;
+        delete ret.pinLockedUntil;
         delete ret.__v;
         return ret;
       }
@@ -70,6 +86,22 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
 userSchema.statics.hashPassword = async function (password) {
   const salt = await bcrypt.genSalt(10);
   return bcrypt.hash(password, salt);
+};
+
+/**
+ * Instance method to verify transaction PIN
+ */
+userSchema.methods.comparePin = async function (candidatePin) {
+  if (!this.transactionPinHash) return false;
+  return bcrypt.compare(candidatePin, this.transactionPinHash);
+};
+
+/**
+ * Static method to hash 6-digit transaction PIN
+ */
+userSchema.statics.hashPin = async function (pin) {
+  const salt = await bcrypt.genSalt(10);
+  return bcrypt.hash(pin, salt);
 };
 
 const User = mongoose.model('User', userSchema);

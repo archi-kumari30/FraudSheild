@@ -14,7 +14,12 @@ const velocityRule = (transactionData, context = {}) => {
       triggered: true,
       ruleCode: 'RULE_VELOCITY_HIGH',
       weight: 30,
-      reason: `Transaction velocity exceeded (${recent10MinTxCount} transactions in last 10 minutes, threshold > 3)`
+      reason: `Transaction velocity exceeded (${recent10MinTxCount} transactions in last 10 minutes, threshold > 3)`,
+      metric: 'Transaction Velocity',
+      observedValue: `${recent10MinTxCount} txns in 10 mins`,
+      baselineValue: '<= 3 txns in 10 mins',
+      deviation: `+${recent10MinTxCount - 3} over limit`,
+      severity: 'HIGH'
     };
   }
 
@@ -22,7 +27,12 @@ const velocityRule = (transactionData, context = {}) => {
     triggered: false,
     ruleCode: 'RULE_VELOCITY_HIGH',
     weight: 0,
-    reason: null
+    reason: null,
+    metric: 'Transaction Velocity',
+    observedValue: `${recent10MinTxCount} txns in 10 mins`,
+    baselineValue: '<= 3 txns in 10 mins',
+    deviation: 'Normal transaction pace',
+    severity: 'LOW'
   };
 };
 

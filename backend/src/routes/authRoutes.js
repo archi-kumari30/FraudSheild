@@ -18,5 +18,11 @@ router.post('/reset-password', resetPasswordValidation, authController.resetPass
 
 // Protected routes
 router.get('/me', authenticateToken, authController.getMe);
+router.post('/pin', authenticateToken, authController.setupPin);
+router.post('/pin/setup', authenticateToken, authController.setupPin);
+router.post('/pin/reset', authenticateToken, authController.resetPin);
+router.post('/pin/verify', authenticateToken, authController.verifyPin);
+router.get('/pin/status', authenticateToken, authController.getPinStatus);
 
 module.exports = router;
+

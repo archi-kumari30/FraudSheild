@@ -15,6 +15,21 @@ const getAuditLogs = async (req, res, next) => {
   }
 };
 
+/**
+ * Verify cryptographic hash-chain integrity of the audit ledger
+ * GET /api/admin/audit-logs/verify
+ */
+const verifyIntegrity = async (req, res, next) => {
+  try {
+    const report = await auditService.verifyAuditIntegrity();
+
+    return successResponse(res, 200, 'Audit ledger integrity check completed', report);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
-  getAuditLogs
+  getAuditLogs,
+  verifyIntegrity
 };

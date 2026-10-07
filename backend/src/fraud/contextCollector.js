@@ -18,13 +18,20 @@ const collectContext = async (userId, recipientId, deviceContext = {}) => {
     isDormant: false,
     beneficiaryAgeHours: null,
     isKnownDevice: false,
-    deviceId: deviceContext.deviceId || 'unknown'
+    isRevokedDevice: false,
+    isKnownIp: false,
+    deviceId: deviceContext.deviceId || 'unknown',
+    ipAddress: deviceContext.ipAddress || 'unknown'
   };
 
   try {
-    // 1. Device recognition check
+    // 1. Device and IP recognition checks
     if (deviceContext.deviceId) {
       context.isKnownDevice = await deviceService.isKnownDevice(userId, deviceContext.deviceId);
+      context.isRevokedDevice = await deviceService.isRevokedDevice(userId, deviceContext.deviceId);
+    }
+    if (deviceContext.ipAddress) {
+      context.isKnownIp = await deviceService.isKnownIp(userId, deviceContext.ipAddress);
     }
 
     // 2. Beneficiary creation age check

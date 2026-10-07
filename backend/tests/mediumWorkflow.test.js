@@ -43,7 +43,11 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
         email,
         password: 'Password123!'
       });
-    return res.body.data;
+    const data = res.body.data;
+    const userId = data.user._id || data.user.id;
+    const pinHash = await User.hashPin('123456');
+    await User.findByIdAndUpdate(userId, { transactionPinHash: pinHash });
+    return data;
   };
 
   const loginAdmin = async () => {
@@ -81,7 +85,8 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
       .send({
         recipientId,
         amount: 2500,
-        note: 'Grocery bill'
+        note: 'Grocery bill',
+        transactionPin: '123456'
       });
 
     expect(res.status).toBe(200);
@@ -123,7 +128,8 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
       .send({
         recipientId,
         amount: 15000,
-        note: 'Medium risk payment'
+        note: 'Medium risk payment',
+        transactionPin: '123456'
       });
 
     expect(res.status).toBe(202);
@@ -162,7 +168,7 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', 'device-unknown-2')
-      .send({ recipientId, amount: 15000, note: 'Consulting' });
+      .send({ recipientId, amount: 15000, note: 'Consulting', transactionPin: '123456' });
 
     expect(initRes.status).toBe(202);
     const txId = initRes.body.data.transaction._id;
@@ -171,7 +177,7 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
     const confirmRes = await request(app)
       .post(`/api/transactions/${txId}/confirm`)
       .set('Authorization', `Bearer ${sender.token}`)
-      .send();
+      .send({ transactionPin: '123456' });
 
     expect(confirmRes.status).toBe(200);
     expect(confirmRes.body.success).toBe(true);
@@ -212,7 +218,7 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', 'device-unknown-3')
-      .send({ recipientId, amount: 15000 });
+      .send({ recipientId, amount: 15000, transactionPin: '123456' });
 
     expect(initRes.status).toBe(202);
     const txId = initRes.body.data.transaction._id;
@@ -221,7 +227,7 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
     const firstConfirm = await request(app)
       .post(`/api/transactions/${txId}/confirm`)
       .set('Authorization', `Bearer ${sender.token}`)
-      .send();
+      .send({ transactionPin: '123456' });
 
     expect(firstConfirm.status).toBe(200);
     expect(firstConfirm.body.data.status).toBe('APPROVED');
@@ -230,7 +236,7 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
     const secondConfirm = await request(app)
       .post(`/api/transactions/${txId}/confirm`)
       .set('Authorization', `Bearer ${sender.token}`)
-      .send();
+      .send({ transactionPin: '123456' });
 
     expect(secondConfirm.status).toBe(400);
     expect(secondConfirm.body.success).toBe(false);
@@ -262,7 +268,7 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', 'device-unknown-4')
-      .send({ recipientId, amount: 15000 });
+      .send({ recipientId, amount: 15000, transactionPin: '123456' });
 
     expect(initRes.status).toBe(202);
     const txId = initRes.body.data.transaction._id;
@@ -271,7 +277,7 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
     const unauthorizedRes = await request(app)
       .post(`/api/transactions/${txId}/confirm`)
       .set('Authorization', `Bearer ${attacker.token}`)
-      .send();
+      .send({ transactionPin: '123456' });
 
     expect(unauthorizedRes.status).toBe(403);
     expect(unauthorizedRes.body.success).toBe(false);
@@ -303,7 +309,7 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', 'device-unknown-5')
-      .send({ recipientId, amount: 15000 });
+      .send({ recipientId, amount: 15000, transactionPin: '123456' });
 
     expect(initRes.status).toBe(202);
     const txId = initRes.body.data.transaction._id;
@@ -340,7 +346,7 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', 'device-unknown-6')
-      .send({ recipientId, amount: 15000 });
+      .send({ recipientId, amount: 15000, transactionPin: '123456' });
 
     expect(initRes.status).toBe(202);
     const txId = initRes.body.data.transaction._id;
@@ -405,7 +411,7 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', 'device-unknown-7')
-      .send({ recipientId, amount: 15000 });
+      .send({ recipientId, amount: 15000, transactionPin: '123456' });
 
     expect(initRes.status).toBe(202);
     const txId = initRes.body.data.transaction._id;
@@ -429,7 +435,7 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
       .post(`/api/transactions/${txId}/confirm`)
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', 'device-unknown-7')
-      .send();
+      .send({ transactionPin: '123456' });
 
     expect(confirmRes.status).toBe(200);
     expect(confirmRes.body.data.status).toBe('BLOCKED');
@@ -484,7 +490,8 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
       .send({
         recipientId,
         amount: 50000,
-        note: 'Urgent payment'
+        note: 'Urgent payment',
+        transactionPin: '123456'
       });
 
     expect([400, 403]).toContain(res.status);
@@ -585,7 +592,8 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
       .send({
         recipientId,
         amount: 50000,
-        note: 'Business consulting payment'
+        note: 'Business consulting payment',
+        transactionPin: '123456'
       });
 
     expect(res.status).toBe(202);
@@ -609,7 +617,7 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
       .post(`/api/transactions/${txId}/confirm`)
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', knownDeviceId)
-      .send();
+      .send({ transactionPin: '123456' });
 
     expect(confirmRes.status).toBe(200);
     expect(confirmRes.body.success).toBe(true);
@@ -622,5 +630,120 @@ describe('Medium-Risk Customer Self-Verification Workflow Tests', () => {
     expect(senderWalletFinal.availableBalance).toBe(50000);
     expect(senderWalletFinal.heldBalance).toBe(0);
     expect(recipientWalletFinal.availableBalance).toBe(55000);
+  });
+
+  test('12. Medium risk payment -> Customer declines -> held balance atomically restored to available balance, recipient receives 0, status REJECTED', async () => {
+    const sender = await registerUser('Alice Decline', 'alice.decline@test.com');
+    const recipient = await registerUser('Bob Decline', 'bob.decline@test.com');
+
+    const senderId = sender.user._id || sender.user.id;
+    const recipientId = recipient.user._id || recipient.user.id;
+
+    await Wallet.findOneAndUpdate({ userId: senderId }, { availableBalance: 50000, heldBalance: 0 });
+    await Wallet.findOneAndUpdate({ userId: recipientId }, { availableBalance: 2000, heldBalance: 0 });
+
+    await Beneficiary.create({
+      userId: senderId,
+      recipientAccountId: recipientId,
+      nickname: 'Bob Friend',
+      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000)
+    });
+
+    // Initiate medium-risk payment
+    const initRes = await request(app)
+      .post('/api/transactions')
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('x-device-id', 'unknown-dev-decline')
+      .send({
+        recipientId,
+        amount: 15000,
+        note: 'Hold in escrow test',
+        transactionPin: '123456'
+      });
+
+    expect(initRes.status).toBe(202);
+    expect(initRes.body.data.status).toBe('CUSTOMER_VERIFICATION_REQUIRED');
+    const txId = initRes.body.data.transaction._id;
+
+    // Check held in escrow
+    let senderWallet = await Wallet.findOne({ userId: senderId });
+    expect(senderWallet.availableBalance).toBe(35000);
+    expect(senderWallet.heldBalance).toBe(15000);
+
+    // Customer declines the transaction
+    const declineRes = await request(app)
+      .post(`/api/transactions/${txId}/decline`)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .send({ reason: 'Declined by customer from review screen' });
+
+    expect(declineRes.status).toBe(200);
+    expect(declineRes.body.success).toBe(true);
+    expect(declineRes.body.data.status).toBe('REJECTED');
+
+    // Balance verification: heldBalance restored back to availableBalance atomically
+    senderWallet = await Wallet.findOne({ userId: senderId });
+    const recipientWallet = await Wallet.findOne({ userId: recipientId });
+
+    expect(senderWallet.availableBalance).toBe(50000);
+    expect(senderWallet.heldBalance).toBe(0);
+    expect(recipientWallet.availableBalance).toBe(2000); // Recipient receives 0
+
+    // Security alert generated
+    const alert = await Alert.findOne({ userId: senderId, transactionId: txId, title: /Payment Declined/i });
+    expect(alert).not.toBeNull();
+    expect(alert.title).toMatch(/Payment Declined/i);
+  });
+
+  test('13. Concurrency / CAS protection: Declining an already declined/resolved transaction fails safely', async () => {
+    const sender = await registerUser('Alice DoubleDecline', 'alice.doubledecline@test.com');
+    const recipient = await registerUser('Bob DoubleDecline', 'bob.doubledecline@test.com');
+
+    const senderId = sender.user._id || sender.user.id;
+    const recipientId = recipient.user._id || recipient.user.id;
+
+    await Wallet.findOneAndUpdate({ userId: senderId }, { availableBalance: 50000, heldBalance: 0 });
+    await Wallet.findOneAndUpdate({ userId: recipientId }, { availableBalance: 2000, heldBalance: 0 });
+
+    await Beneficiary.create({
+      userId: senderId,
+      recipientAccountId: recipientId,
+      nickname: 'Bob Friend',
+      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000)
+    });
+
+    const initRes = await request(app)
+      .post('/api/transactions')
+      .set('Authorization', `Bearer ${sender.token}`)
+      .set('x-device-id', 'unknown-dev-decline2')
+      .send({
+        recipientId,
+        amount: 15000,
+        transactionPin: '123456'
+      });
+
+    const txId = initRes.body.data.transaction._id;
+
+    // First decline succeeds
+    const firstDecline = await request(app)
+      .post(`/api/transactions/${txId}/decline`)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .send({ reason: 'First decline' });
+
+    expect(firstDecline.status).toBe(200);
+    expect(firstDecline.body.data.status).toBe('REJECTED');
+
+    // Second decline fails safely
+    const secondDecline = await request(app)
+      .post(`/api/transactions/${txId}/decline`)
+      .set('Authorization', `Bearer ${sender.token}`)
+      .send({ reason: 'Duplicate decline' });
+
+    expect([400, 409]).toContain(secondDecline.status);
+    expect(secondDecline.body.success).toBe(false);
+
+    // Sender balance remains accurately 50000, not double refunded
+    const senderWallet = await Wallet.findOne({ userId: senderId });
+    expect(senderWallet.availableBalance).toBe(50000);
+    expect(senderWallet.heldBalance).toBe(0);
   });
 });

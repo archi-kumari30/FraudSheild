@@ -30,7 +30,7 @@ describe('Module 6: Transaction Processing Engine Tests', () => {
     await UserDevice.deleteMany({});
   });
 
-  // Helper to register user and obtain token
+  // Helper to register user and obtain token with configured transaction PIN
   const registerUser = async (name, email) => {
     const res = await request(app)
       .post('/api/auth/register')
@@ -39,7 +39,11 @@ describe('Module 6: Transaction Processing Engine Tests', () => {
         email,
         password: 'Password123!'
       });
-    return res.body.data;
+    const data = res.body.data;
+    const userId = data.user._id || data.user.id;
+    const pinHash = await User.hashPin('123456');
+    await User.findByIdAndUpdate(userId, { transactionPinHash: pinHash });
+    return data;
   };
 
   // TC-M6-001: Low-Risk Transaction Executes Immediately (LOW -> APPROVED)
@@ -65,7 +69,8 @@ describe('Module 6: Transaction Processing Engine Tests', () => {
       .send({
         recipientId,
         amount: 1000,
-        note: 'Lunch payment'
+        note: 'Lunch payment',
+        transactionPin: '123456'
       });
 
     expect(res.status).toBe(200);
@@ -117,7 +122,8 @@ describe('Module 6: Transaction Processing Engine Tests', () => {
       .send({
         recipientId,
         amount: 15000,
-        note: 'Medium risk payment'
+        note: 'Medium risk payment',
+        transactionPin: '123456'
       });
 
     expect(res.status).toBe(202);
@@ -142,7 +148,8 @@ describe('Module 6: Transaction Processing Engine Tests', () => {
     // Customer confirms payment -> settles immediately without admin
     const confirmRes = await request(app)
       .post(`/api/transactions/${tx._id}/confirm`)
-      .set('Authorization', `Bearer ${sender.token}`);
+      .set('Authorization', `Bearer ${sender.token}`)
+      .send({ transactionPin: '123456' });
 
     expect(confirmRes.status).toBe(200);
     expect(confirmRes.body.data.status).toBe('APPROVED');
@@ -198,7 +205,8 @@ describe('Module 6: Transaction Processing Engine Tests', () => {
       .send({
         recipientId,
         amount: 55000,
-        note: 'High risk fraud transfer'
+        note: 'High risk fraud transfer',
+        transactionPin: '123456'
       });
 
     expect(res.status).toBe(400);
@@ -231,7 +239,8 @@ describe('Module 6: Transaction Processing Engine Tests', () => {
       .set('Authorization', `Bearer ${sender.token}`)
       .send({
         recipientId,
-        amount: 25000
+        amount: 25000,
+        transactionPin: '123456'
       });
 
     expect(res.status).toBe(400);
@@ -264,13 +273,13 @@ describe('Module 6: Transaction Processing Engine Tests', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', 'concurrent-trusted-pc')
-      .send({ recipientId, amount: 8000 });
+      .send({ recipientId, amount: 8000, transactionPin: '123456' });
 
     const req2 = request(app)
       .post('/api/transactions')
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', 'concurrent-trusted-pc')
-      .send({ recipientId, amount: 8000 });
+      .send({ recipientId, amount: 8000, transactionPin: '123456' });
 
     const [res1, res2] = await Promise.all([req1, req2]);
 
@@ -303,13 +312,13 @@ describe('Module 6: Transaction Processing Engine Tests', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', 'history-pc')
-      .send({ recipientId, amount: 1000, note: 'Tx 1' });
+      .send({ recipientId, amount: 1000, note: 'Tx 1', transactionPin: '123456' });
 
     await request(app)
       .post('/api/transactions')
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', 'history-pc')
-      .send({ recipientId, amount: 2000, note: 'Tx 2' });
+      .send({ recipientId, amount: 2000, note: 'Tx 2', transactionPin: '123456' });
 
     const res = await request(app)
       .get('/api/transactions')

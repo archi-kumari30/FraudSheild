@@ -12,12 +12,14 @@ import WalletPage from '../pages/customer/WalletPage';
 import SendMoneyPage from '../pages/customer/SendMoneyPage';
 import BeneficiariesPage from '../pages/customer/BeneficiariesPage';
 import TransactionsPage from '../pages/customer/TransactionsPage';
+import DisputesPage from '../pages/customer/DisputesPage';
 import AlertsPage from '../pages/customer/AlertsPage';
 import CustomerSettingsPage from '../pages/customer/SettingsPage';
 import SecurityPage from '../pages/customer/SecurityPage';
 import AdminLayout from '../layouts/AdminLayout';
 import AdminOverviewPage from '../pages/admin/AdminOverviewPage';
 import AdminDashboardPage from '../pages/admin/AdminDashboardPage';
+import AdminDisputesPage from '../pages/admin/AdminDisputesPage';
 import AdminTransactionsPage from '../pages/admin/AdminTransactionsPage';
 import TransactionInvestigationPage from '../pages/admin/TransactionInvestigationPage';
 import AdminAlertsPage from '../pages/admin/AdminAlertsPage';
@@ -93,6 +95,7 @@ const AppRoutes = () => {
         <Route path="/send-money" element={<SendMoneyPage />} />
         <Route path="/beneficiaries" element={<BeneficiariesPage />} />
         <Route path="/transactions" element={<TransactionsPage />} />
+        <Route path="/disputes" element={<DisputesPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/security" element={<SecurityPage />} />
         <Route path="/settings" element={<CustomerSettingsPage />} />
@@ -109,6 +112,7 @@ const AppRoutes = () => {
         <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="/admin/dashboard" element={<AdminOverviewPage />} />
         <Route path="/admin/reviews" element={<AdminDashboardPage />} />
+        <Route path="/admin/disputes" element={<AdminDisputesPage />} />
         <Route path="/admin/transactions" element={<AdminTransactionsPage />} />
         <Route path="/admin/transactions/:id" element={<TransactionInvestigationPage />} />
         <Route path="/admin/investigation/:id" element={<TransactionInvestigationPage />} />

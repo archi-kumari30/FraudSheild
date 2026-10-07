@@ -230,10 +230,191 @@ const resetPassword = async (req, res, next) => {
   }
 };
 
+/**
+ * Configure or update customer's 6-digit transaction PIN
+ * POST /api/auth/pin
+ */
+const setupPin = async (req, res, next) => {
+  try {
+    const { pin } = req.body;
+    const currentPassword = req.body.currentPassword || req.body.password;
+
+    if (!pin || !/^\d{6}$/.test(String(pin))) {
+      return errorResponse(res, 400, 'Transaction PIN must be exactly 6 digits', 'INVALID_PIN_FORMAT');
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return errorResponse(res, 404, 'User not found', 'NOT_FOUND');
+    }
+
+    // Require current password for security verification if already set or updating
+    if (user.transactionPinHash && !currentPassword) {
+      return errorResponse(res, 400, 'Current account password is required to change transaction PIN', 'PASSWORD_REQUIRED');
+    }
+
+    if (currentPassword) {
+      const isMatch = await user.comparePassword(currentPassword);
+      if (!isMatch) {
+        return errorResponse(res, 401, 'Current password verification failed', 'INVALID_PASSWORD');
+      }
+    }
+
+    user.transactionPinHash = await User.hashPin(String(pin));
+    user.pinFailedAttempts = 0;
+    user.pinLockedUntil = null;
+    await user.save();
+
+    await auditService.logEvent({
+      eventType: 'AUTH_PIN_CONFIGURED',
+      actorId: user._id,
+      actorRole: user.role,
+      targetEntity: { entityType: 'User', entityId: user._id },
+      metadata: { action: user.transactionPinHash ? 'PIN_UPDATED' : 'PIN_SET' },
+      ipAddress: req.ip || 'unknown'
+    });
+
+    return successResponse(res, 200, '6-digit transaction PIN set successfully', {
+      hasTransactionPin: true,
+      hasPinSet: true
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Reset forgotten transaction PIN using authenticated account password
+ * POST /api/auth/pin/reset
+ */
+const resetPin = async (req, res, next) => {
+  try {
+    const { password, currentPassword, newPin, pin } = req.body;
+    const targetPin = newPin || pin;
+    const authPassword = password || currentPassword;
+
+    if (!targetPin || !/^\d{6}$/.test(String(targetPin))) {
+      return errorResponse(res, 400, 'New transaction PIN must be exactly 6 digits', 'INVALID_PIN_FORMAT');
+    }
+
+    if (!authPassword) {
+      return errorResponse(res, 400, 'Account password is required for security verification', 'PASSWORD_REQUIRED');
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return errorResponse(res, 404, 'User not found', 'NOT_FOUND');
+    }
+
+    const isMatch = await user.comparePassword(authPassword);
+    if (!isMatch) {
+      await auditService.logEvent({
+        eventType: 'AUTH_PIN_RESET_FAILED',
+        actorId: user._id,
+        actorRole: user.role,
+        targetEntity: { entityType: 'User', entityId: user._id },
+        metadata: { reason: 'INVALID_PASSWORD' },
+        ipAddress: req.ip || 'unknown'
+      });
+      return errorResponse(res, 401, 'Account password verification failed', 'INVALID_PASSWORD');
+    }
+
+    user.transactionPinHash = await User.hashPin(String(targetPin));
+    user.pinFailedAttempts = 0;
+    user.pinLockedUntil = null;
+    await user.save();
+
+    await auditService.logEvent({
+      eventType: 'AUTH_PIN_RESET_SUCCESS',
+      actorId: user._id,
+      actorRole: user.role,
+      targetEntity: { entityType: 'User', entityId: user._id },
+      metadata: { action: 'PIN_RESET' },
+      ipAddress: req.ip || 'unknown'
+    });
+
+    return successResponse(res, 200, 'Transaction PIN reset successfully', {
+      hasTransactionPin: true,
+      hasPinSet: true
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Verify transaction PIN
+ * POST /api/auth/pin/verify
+ */
+const verifyPin = async (req, res, next) => {
+  try {
+    const { pin } = req.body;
+
+    if (!pin || !/^\d{6}$/.test(String(pin))) {
+      return errorResponse(res, 400, 'Transaction PIN must be exactly 6 digits', 'INVALID_PIN_FORMAT');
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user || !user.transactionPinHash) {
+      return errorResponse(res, 400, 'No transaction PIN configured', 'PIN_NOT_SET');
+    }
+
+    if (user.pinLockedUntil && new Date(user.pinLockedUntil) > new Date()) {
+      return errorResponse(res, 423, 'Transaction PIN is locked due to too many failed attempts', 'PIN_LOCKED');
+    }
+
+    const isMatch = await user.comparePin(String(pin));
+    if (!isMatch) {
+      user.pinFailedAttempts = (user.pinFailedAttempts || 0) + 1;
+      if (user.pinFailedAttempts >= 3) {
+        user.pinLockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+      }
+      await user.save();
+      return errorResponse(res, 401, 'Invalid transaction PIN', 'INVALID_PIN', {
+        remainingAttempts: Math.max(0, 3 - user.pinFailedAttempts)
+      });
+    }
+
+    user.pinFailedAttempts = 0;
+    user.pinLockedUntil = null;
+    await user.save();
+
+    return successResponse(res, 200, 'PIN verified successfully', {
+      verified: true
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Check if authenticated user has a transaction PIN configured
+ * GET /api/auth/pin/status
+ */
+const getPinStatus = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id);
+    const hasPinSet = !!(user && user.transactionPinHash);
+    const isLocked = !!(user && user.pinLockedUntil && new Date(user.pinLockedUntil) > new Date());
+
+    return successResponse(res, 200, 'PIN status retrieved', {
+      hasPinSet,
+      hasTransactionPin: hasPinSet,
+      isLocked
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
   getMe,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  setupPin,
+  resetPin,
+  verifyPin,
+  getPinStatus
 };

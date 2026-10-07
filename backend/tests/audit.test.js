@@ -48,7 +48,11 @@ describe('Module 9: Audit Logging & Observability Tests', () => {
         email,
         password: 'Password123!'
       });
-    return res.body.data;
+    const data = res.body.data;
+    const userId = data.user._id || data.user.id;
+    const pinHash = await User.hashPin('123456');
+    await User.findByIdAndUpdate(userId, { transactionPinHash: pinHash });
+    return data;
   };
 
   const loginAdmin = async () => {
@@ -113,7 +117,8 @@ describe('Module 9: Audit Logging & Observability Tests', () => {
       .send({
         recipientId,
         amount: 2500,
-        note: 'Payment for services'
+        note: 'Payment for services',
+        transactionPin: '123456'
       });
 
     expect(res.status).toBe(200);

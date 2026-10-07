@@ -9,6 +9,16 @@ const startServer = async () => {
     // 1. Establish Database Connection
     await connectDB();
 
+    // In development mode, automatically provision the development admin account if not already present
+    if (config.nodeEnv === 'development') {
+      try {
+        const seedAdmin = require('./scripts/seedAdmin');
+        await seedAdmin(false);
+      } catch (seedErr) {
+        console.warn('[DEV SEED WARNING] Could not auto-seed admin:', seedErr.message);
+      }
+    }
+
     // 2. Start HTTP Server
     server = app.listen(config.port, () => {
       console.log(`====================================================`);

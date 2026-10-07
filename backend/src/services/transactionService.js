@@ -6,6 +6,7 @@ const walletService = require('./walletService');
 const deviceService = require('./deviceService');
 const alertService = require('./alertService');
 const auditService = require('./auditService');
+const { runInTransaction } = require('../utils/dbTransaction');
 const { collectContext } = require('../engine/contextCollector');
 const { evaluateTransaction } = require('../engine/fraudEngine');
 
@@ -18,7 +19,7 @@ const { evaluateTransaction } = require('../engine/fraudEngine');
  * @param {Object} deviceContext
  * @returns {Promise<Object>}
  */
-const initiateTransfer = async (senderId, recipientId, amount, note = '', deviceContext = {}) => {
+const initiateTransfer = async (senderId, recipientId, amount, note = '', deviceContext = {}, transactionPin = null) => {
   const numericAmount = Number(amount);
 
   // 1. Validate transfer amount
@@ -72,6 +73,87 @@ const initiateTransfer = async (senderId, recipientId, amount, note = '', device
     throw error;
   }
 
+  // 3. Sender Verification & Mandatory Transaction PIN Authentication
+  const senderUser = await User.findById(senderId);
+  if (!senderUser) {
+    const error = new Error('Sender user not found');
+    error.status = 404;
+    error.code = 'NOT_FOUND';
+    throw error;
+  }
+
+  // Check if sender has configured a Transaction PIN
+  if (!senderUser.transactionPinHash) {
+    const error = new Error('Transaction PIN not configured. Please set up your 6-digit Transaction PIN in Security Settings before sending money.');
+    error.status = 400;
+    error.code = 'TRANSACTION_PIN_NOT_SET';
+    throw error;
+  }
+
+  // Require Transaction PIN for EVERY outgoing payment
+  if (!transactionPin || !/^\d{6}$/.test(String(transactionPin))) {
+    const error = new Error('A 6-digit Transaction PIN is required to authorize this payment');
+    error.status = 400;
+    error.code = 'PIN_REQUIRED';
+    throw error;
+  }
+
+  // Brute-force lock check
+  if (senderUser.pinLockedUntil && new Date(senderUser.pinLockedUntil) > new Date()) {
+    const remainingMins = Math.ceil((new Date(senderUser.pinLockedUntil).getTime() - Date.now()) / (60 * 1000));
+    const error = new Error(`Transaction PIN verification is locked due to multiple failed attempts. Please wait ${remainingMins} minutes before trying again.`);
+    error.status = 429;
+    error.code = 'PIN_LOCKED';
+    throw error;
+  }
+
+  const isPinValid = await senderUser.comparePin(String(transactionPin));
+  if (!isPinValid) {
+    senderUser.pinFailedAttempts = (senderUser.pinFailedAttempts || 0) + 1;
+    if (senderUser.pinFailedAttempts >= 3) {
+      senderUser.pinLockedUntil = new Date(Date.now() + 15 * 60 * 1000); // 15-minute lock
+    }
+    await senderUser.save();
+
+    await auditService.logEvent({
+      eventType: 'TRANSACTION_PIN_FAILED',
+      actorId: senderId,
+      actorRole: 'customer',
+      metadata: { failedAttempts: senderUser.pinFailedAttempts, isLocked: senderUser.pinFailedAttempts >= 3 },
+      ipAddress: deviceContext.ipAddress || 'unknown'
+    });
+
+    if (senderUser.pinFailedAttempts >= 3) {
+      await alertService.createAlert(
+        senderId,
+        null,
+        'HIGH',
+        'Security Alert: Transaction PIN Locked',
+        'Multiple failed PIN attempts were detected. Your Transaction PIN has been temporarily locked for 15 minutes.'
+      );
+    }
+
+    const error = new Error('Incorrect Transaction PIN. Payment authorization failed.');
+    error.status = 401;
+    error.code = 'INVALID_PIN';
+    throw error;
+  }
+
+  // Reset failed PIN attempts on successful verification
+  if (senderUser.pinFailedAttempts > 0 || senderUser.pinLockedUntil) {
+    senderUser.pinFailedAttempts = 0;
+    senderUser.pinLockedUntil = null;
+    await senderUser.save();
+  }
+
+  await auditService.logEvent({
+    eventType: 'TRANSACTION_PIN_VERIFIED',
+    actorId: senderId,
+    actorRole: 'customer',
+    metadata: { method: 'TRANSACTION_PIN' },
+    ipAddress: deviceContext.ipAddress || 'unknown'
+  });
+
   // 4. Pre-check sender liquid balance before engine invocation
   const senderWallet = await Wallet.findOne({ userId: senderId });
   if (!senderWallet || senderWallet.availableBalance < numericAmount) {
@@ -88,29 +170,19 @@ const initiateTransfer = async (senderId, recipientId, amount, note = '', device
   let transactionStatus = 'PENDING';
   let httpStatus = 200;
 
-  // 6. Execute lifecycle according to deterministic risk tier
+  // 6. Execute lifecycle and persist under ACID transaction session
   if (fraudResult.riskLevel === 'LOW') {
-    // Approved: Deduct sender available balance and credit recipient available balance
-    await walletService.executeApprovedTransfer(senderId, resolvedRecipientId, numericAmount);
     transactionStatus = 'APPROVED';
     httpStatus = 200;
-
-    // Register device if verified
-    if (deviceContext.isVerified) {
-      await deviceService.registerDevice(senderId, deviceContext);
-    }
   } else if (fraudResult.riskLevel === 'MEDIUM') {
-    // Review: Reserve funds in sender heldBalance escrow pending customer verification
-    await walletService.executeEscrowHold(senderId, numericAmount);
     transactionStatus = 'CUSTOMER_VERIFICATION_REQUIRED';
     httpStatus = 202; // Accepted / Customer Verification Required
   } else if (fraudResult.riskLevel === 'HIGH') {
-    // Blocked: Zero balance deduction
     transactionStatus = 'BLOCKED';
     httpStatus = 400; // Blocked
   }
 
-  // 7. Persist immutable transaction record
+  // 7. Persist immutable transaction record atomically with wallet mutations
   const senderObjId = mongoose.Types.ObjectId.isValid(senderId)
     ? new mongoose.Types.ObjectId(senderId.toString())
     : senderId;
@@ -127,10 +199,17 @@ const initiateTransfer = async (senderId, recipientId, amount, note = '', device
     riskScore: fraudResult.riskScore,
     riskLevel: fraudResult.riskLevel,
     triggeredRules: fraudResult.triggeredRules,
+    attributionWaterfall: fraudResult.attributionWaterfall || [],
+    mitigatingSignals: fraudResult.mitigatingSignals || [],
+    waterfallSummary: fraudResult.waterfallSummary || {},
+    caseStatus: transactionStatus === 'FLAGGED_FOR_REVIEW' ? 'UNASSIGNED' : 'UNASSIGNED',
+    casePriority: fraudResult.riskScore >= 90 ? 'P1_CRITICAL' : fraudResult.riskScore >= 70 ? 'P2_HIGH' : 'P3_MEDIUM',
     deviceContext: {
       deviceId: deviceContext.deviceId || 'unknown',
       ipAddress: deviceContext.ipAddress || 'unknown',
-      userAgent: deviceContext.userAgent || 'unknown'
+      userAgent: deviceContext.userAgent || 'unknown',
+      isKnownDevice: context.isKnownDevice || false,
+      isKnownIp: context.isKnownIp || false
     },
     behaviorContext: {
       historyAvg: context.historyAvg || 0,
@@ -140,27 +219,108 @@ const initiateTransfer = async (senderId, recipientId, amount, note = '', device
     note: (note || '').trim()
   });
 
-  await transaction.save();
+  await runInTransaction(async (session) => {
+    const saveOptions = session ? { session } : {};
+
+    if (fraudResult.riskLevel === 'LOW') {
+      await walletService.executeApprovedTransfer(senderId, resolvedRecipientId, numericAmount, session);
+    } else if (fraudResult.riskLevel === 'MEDIUM') {
+      await walletService.executeEscrowHold(senderId, numericAmount, session);
+    }
+    // HIGH risk requires zero wallet mutations
+
+    await transaction.save(saveOptions);
+  });
+
+  // Register device if verified
+  if (fraudResult.riskLevel === 'LOW' && deviceContext.isVerified) {
+    await deviceService.registerDevice(senderId, deviceContext);
+  }
+
   await transaction.populate('senderId', 'name email');
   await transaction.populate('recipientId', 'name email');
 
-  // 8. Auto-generate alerts for suspicious transactions
+  // 8. Auto-generate alerts for suspicious transactions and unrecognized access
   if (transactionStatus === 'CUSTOMER_VERIFICATION_REQUIRED') {
-    await alertService.createAlert(
+    const alert = await alertService.createAlert(
       senderId,
       transaction._id,
       'MEDIUM',
       'Additional verification is required for this payment.',
       `FraudShield detected unusual activity. Please confirm that you initiated this payment.`
     );
+    await auditService.logEvent({
+      eventType: 'ALERT_GENERATED',
+      actorId: senderId,
+      actorRole: 'system',
+      targetEntity: { entityType: 'Alert', entityId: alert._id },
+      metadata: { severity: 'MEDIUM', transactionId: transaction._id }
+    });
   } else if (transactionStatus === 'BLOCKED') {
-    await alertService.createAlert(
+    const alert = await alertService.createAlert(
       senderId,
       transaction._id,
       'HIGH',
       'High-risk payment blocked.',
       `High-risk transfer of ₹${numericAmount.toLocaleString('en-IN')} to ${recipientUser.name} blocked due to elevated security risk (Score: ${fraudResult.riskScore}/100). Zero funds deducted.`
     );
+    await auditService.logEvent({
+      eventType: 'ALERT_GENERATED',
+      actorId: senderId,
+      actorRole: 'system',
+      targetEntity: { entityType: 'Alert', entityId: alert._id },
+      metadata: { severity: 'HIGH', transactionId: transaction._id }
+    });
+  } else if (!context.isKnownDevice) {
+    const alert = await alertService.createAlert(
+      senderId,
+      transaction._id,
+      'MEDIUM',
+      'Security Alert: Unrecognized Device Detected',
+      `A payment of ₹${numericAmount.toLocaleString('en-IN')} was initiated from an unrecognized device (${deviceContext.deviceId || 'unrecognized'}). If this wasn't you, please secure your account immediately.`
+    );
+    await auditService.logEvent({
+      eventType: 'ALERT_GENERATED',
+      actorId: senderId,
+      actorRole: 'system',
+      targetEntity: { entityType: 'Alert', entityId: alert._id },
+      metadata: { severity: 'MEDIUM', transactionId: transaction._id, reason: 'NEW_DEVICE' }
+    });
+  }
+
+  // Log suspicious payment access telemetry
+  if (!context.isKnownDevice) {
+    await auditService.logEvent({
+      eventType: 'NEW_DEVICE_DETECTED',
+      actorId: senderId,
+      actorRole: 'customer',
+      targetEntity: { entityType: 'Transaction', entityId: transaction._id },
+      metadata: {
+        deviceId: deviceContext.deviceId || 'unknown',
+        userAgent: deviceContext.userAgent || 'unknown',
+        ipAddress: deviceContext.ipAddress || 'unknown',
+        amount: numericAmount
+      },
+      ipAddress: deviceContext.ipAddress || 'unknown'
+    });
+  }
+
+  if (!context.isKnownDevice || !context.isKnownIp || fraudResult.riskLevel !== 'LOW') {
+    await auditService.logEvent({
+      eventType: 'SUSPICIOUS_PAYMENT_ATTEMPT',
+      actorId: senderId,
+      actorRole: 'customer',
+      targetEntity: { entityType: 'Transaction', entityId: transaction._id },
+      metadata: {
+        deviceId: deviceContext.deviceId || 'unknown',
+        isKnownDevice: context.isKnownDevice || false,
+        isKnownIp: context.isKnownIp || false,
+        riskScore: fraudResult.riskScore,
+        riskLevel: fraudResult.riskLevel,
+        amount: numericAmount
+      },
+      ipAddress: deviceContext.ipAddress || 'unknown'
+    });
   }
 
   // 9. Instrument audit logging (TC-M9-002)
@@ -263,7 +423,7 @@ const getTransactionById = async (userId, transactionId, userRole = 'customer') 
  * @param {Object} deviceContext - Request device context
  * @returns {Promise<Object>}
  */
-const confirmTransaction = async (userId, transactionId, deviceContext = {}) => {
+const confirmTransaction = async (userId, transactionId, deviceContext = {}, verificationPayload = {}) => {
   // 1. Audit log customer verification attempt
   await auditService.logEvent({
     eventType: 'CUSTOMER_VERIFICATION_ATTEMPT',
@@ -301,6 +461,68 @@ const confirmTransaction = async (userId, transactionId, deviceContext = {}) => 
     error.code = 'FORBIDDEN';
     throw error;
   }
+
+  // 3b. Mandatory Transaction PIN Verification
+  const user = await User.findById(userId);
+  if (!user || !user.transactionPinHash) {
+    const error = new Error('Transaction PIN not configured. Please set up your 6-digit Transaction PIN in Security Settings before verifying payments.');
+    error.status = 400;
+    error.code = 'TRANSACTION_PIN_NOT_SET';
+    throw error;
+  }
+
+  if (user.pinLockedUntil && new Date(user.pinLockedUntil) > new Date()) {
+    const remainingMins = Math.ceil((new Date(user.pinLockedUntil).getTime() - Date.now()) / (60 * 1000));
+    const error = new Error(`Transaction PIN verification is locked due to multiple failed attempts. Please wait ${remainingMins} minutes before trying again.`);
+    error.status = 429;
+    error.code = 'PIN_LOCKED';
+    throw error;
+  }
+
+  const candidatePin = verificationPayload?.transactionPin;
+  if (!candidatePin || !/^\d{6}$/.test(String(candidatePin))) {
+    const error = new Error('A 6-digit Transaction PIN is required to authorize this payment');
+    error.status = 400;
+    error.code = 'PIN_REQUIRED';
+    throw error;
+  }
+
+  const isPinValid = await user.comparePin(String(candidatePin));
+  if (!isPinValid) {
+    user.pinFailedAttempts = (user.pinFailedAttempts || 0) + 1;
+    if (user.pinFailedAttempts >= 3) {
+      user.pinLockedUntil = new Date(Date.now() + 15 * 60 * 1000); // 15-minute lock
+    }
+    await user.save();
+
+    await auditService.logEvent({
+      eventType: 'STEP_UP_PIN_FAILED',
+      actorId: userId,
+      actorRole: 'customer',
+      targetEntity: { entityType: 'Transaction', entityId: transactionId },
+      metadata: { failedAttempts: user.pinFailedAttempts, isLocked: user.pinFailedAttempts >= 3 },
+      ipAddress: deviceContext.ipAddress || 'unknown'
+    });
+
+    const error = new Error('Incorrect transaction PIN. Please verify your 6-digit PIN and try again.');
+    error.status = 401;
+    error.code = 'INVALID_PIN';
+    throw error;
+  }
+
+  // Reset failed counter upon successful PIN verification
+  user.pinFailedAttempts = 0;
+  user.pinLockedUntil = null;
+  await user.save();
+
+  await auditService.logEvent({
+    eventType: 'STEP_UP_PIN_VERIFIED',
+    actorId: userId,
+    actorRole: 'customer',
+    targetEntity: { entityType: 'Transaction', entityId: transactionId },
+    metadata: { method: 'TRANSACTION_PIN' },
+    ipAddress: deviceContext.ipAddress || 'unknown'
+  });
 
   // 4. Verification state check
   if (transaction.status === 'APPROVED') {
@@ -353,16 +575,19 @@ const confirmTransaction = async (userId, transactionId, deviceContext = {}) => 
 
     // If fresh checks determine transaction is HIGH risk:
     if (reEvaluation.riskLevel === 'HIGH') {
-      // Release held funds back to sender's available balance, zero funds to recipient
-      await walletService.refundEscrow(userId, transaction.amount);
-      lockedTx.status = 'BLOCKED';
-      lockedTx.riskScore = reEvaluation.riskScore;
-      lockedTx.riskLevel = 'HIGH';
-      lockedTx.triggeredRules = reEvaluation.triggeredRules;
-      lockedTx.resolutionStatus = 'REJECTED';
-      lockedTx.resolvedAt = new Date();
-      lockedTx.resolutionNotes = 'Blocked during post-verification security screening.';
-      await lockedTx.save();
+      await runInTransaction(async (session) => {
+        const saveOptions = session ? { session } : {};
+        // Release held funds back to sender's available balance, zero funds to recipient
+        await walletService.refundEscrow(userId, transaction.amount, session);
+        lockedTx.status = 'BLOCKED';
+        lockedTx.riskScore = reEvaluation.riskScore;
+        lockedTx.riskLevel = 'HIGH';
+        lockedTx.triggeredRules = reEvaluation.triggeredRules;
+        lockedTx.resolutionStatus = 'REJECTED';
+        lockedTx.resolvedAt = new Date();
+        lockedTx.resolutionNotes = 'Blocked during post-verification security screening.';
+        await lockedTx.save(saveOptions);
+      });
 
       // Alert
       await alertService.createAlert(
@@ -395,18 +620,21 @@ const confirmTransaction = async (userId, transactionId, deviceContext = {}) => 
     }
 
     // 8. Acceptable -> Release escrow and settle to recipient atomically
-    await walletService.releaseEscrowAndSettle(userId, recipientId, transaction.amount);
+    await runInTransaction(async (session) => {
+      const saveOptions = session ? { session } : {};
+      await walletService.releaseEscrowAndSettle(userId, recipientId, transaction.amount, session);
 
-    lockedTx.status = 'APPROVED';
-    lockedTx.resolutionStatus = 'APPROVED';
-    lockedTx.resolvedAt = new Date();
-    lockedTx.resolutionNotes = 'Customer verified initiation of payment.';
-    lockedTx.verificationDetails = {
-      verifiedAt: new Date(),
-      verifiedVia: 'CUSTOMER_CONFIRMATION',
-      ipAddress: deviceContext.ipAddress || 'unknown'
-    };
-    await lockedTx.save();
+      lockedTx.status = 'APPROVED';
+      lockedTx.resolutionStatus = 'APPROVED';
+      lockedTx.resolvedAt = new Date();
+      lockedTx.resolutionNotes = 'Customer verified initiation of payment.';
+      lockedTx.verificationDetails = {
+        verifiedAt: new Date(),
+        verifiedVia: 'CUSTOMER_CONFIRMATION',
+        ipAddress: deviceContext.ipAddress || 'unknown'
+      };
+      await lockedTx.save(saveOptions);
+    });
 
     // Register device if presented
     if (deviceContext.deviceId && deviceContext.deviceId !== 'unknown') {
@@ -531,10 +759,137 @@ const escalateTransaction = async (userId, transactionId, reason = 'Customer rep
   };
 };
 
+/**
+ * Customer declines a medium-risk transaction held in escrow.
+ * Atomically releases escrow funds back to sender's available balance and sets status to REJECTED.
+ * @param {string|ObjectId} userId
+ * @param {string|ObjectId} transactionId
+ * @param {string} reason
+ * @param {Object} deviceContext
+ * @returns {Promise<Object>}
+ */
+const declineTransaction = async (userId, transactionId, reason = 'Declined by customer', deviceContext = {}) => {
+  if (!mongoose.Types.ObjectId.isValid(transactionId)) {
+    const error = new Error('Invalid transaction ID');
+    error.status = 400;
+    error.code = 'INVALID_ID';
+    throw error;
+  }
+
+  // 1. Fetch transaction
+  const transaction = await Transaction.findById(transactionId);
+  if (!transaction) {
+    const error = new Error('Transaction not found');
+    error.status = 404;
+    error.code = 'NOT_FOUND';
+    throw error;
+  }
+
+  // 2. Ownership verification: must belong to the logged-in user
+  const senderIdStr = (transaction.senderId?._id || transaction.senderId).toString();
+  if (senderIdStr !== userId.toString()) {
+    const error = new Error('Unauthorized: You can only decline transactions initiated from your own account');
+    error.status = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  // 3. State verification
+  if (['REJECTED', 'APPROVED', 'BLOCKED', 'REFUNDED'].includes(transaction.status)) {
+    const error = new Error(`Transaction has already been processed or finalized (current status: ${transaction.status})`);
+    error.status = 400;
+    error.code = 'ALREADY_FINALIZED';
+    throw error;
+  }
+
+  if (!['CUSTOMER_VERIFICATION_REQUIRED', 'FLAGGED_FOR_REVIEW'].includes(transaction.status)) {
+    const error = new Error(`Transaction cannot be declined in status: ${transaction.status}`);
+    error.status = 400;
+    error.code = 'INVALID_TRANSACTION_STATE';
+    throw error;
+  }
+
+  // 4. Atomic CAS state transition to prevent duplicate refund / race conditions
+  const lockedTx = await Transaction.findOneAndUpdate(
+    {
+      _id: transactionId,
+      senderId: userId,
+      status: { $in: ['CUSTOMER_VERIFICATION_REQUIRED', 'FLAGGED_FOR_REVIEW'] }
+    },
+    { $set: { status: 'DECLINING' } },
+    { new: true }
+  );
+
+  if (!lockedTx) {
+    const error = new Error('Transaction is already being processed or has already been declined/refunded');
+    error.status = 409;
+    error.code = 'CONCURRENT_DECLINE';
+    throw error;
+  }
+
+  try {
+    // 5. Execute atomic refund of escrow held funds back to sender's available balance
+    await runInTransaction(async (session) => {
+      const saveOptions = session ? { session } : {};
+
+      // Refund heldBalance back to availableBalance
+      await walletService.refundEscrow(userId, lockedTx.amount, session);
+
+      lockedTx.status = 'REJECTED';
+      lockedTx.resolutionStatus = 'REJECTED';
+      lockedTx.resolvedAt = new Date();
+      lockedTx.resolutionNotes = reason || 'Declined by customer';
+      lockedTx.caseStatus = 'CLOSED';
+
+      await lockedTx.save(saveOptions);
+    });
+
+    // 6. Security Alert for customer
+    await alertService.createAlert(
+      userId,
+      lockedTx._id,
+      'MEDIUM',
+      'Payment Declined — Escrow Restored',
+      `Payment of ₹${lockedTx.amount.toLocaleString('en-IN')} was declined. Escrow funds have been restored immediately to your available balance. Recipient received ₹0.`
+    );
+
+    // 7. Audit log event
+    await auditService.logEvent({
+      eventType: 'CUSTOMER_TRANSACTION_DECLINED',
+      actorId: userId,
+      actorRole: 'customer',
+      targetEntity: { entityType: 'Transaction', entityId: lockedTx._id },
+      metadata: {
+        amount: lockedTx.amount,
+        status: 'REJECTED',
+        reason
+      },
+      ipAddress: deviceContext.ipAddress || 'unknown'
+    });
+
+    await lockedTx.populate('senderId', 'name email');
+    await lockedTx.populate('recipientId', 'name email');
+
+    return {
+      status: 'REJECTED',
+      transaction: lockedTx,
+      message: 'Payment declined. Funds restored to your available balance.'
+    };
+  } catch (err) {
+    if (lockedTx.status === 'DECLINING') {
+      lockedTx.status = transaction.status; // Revert to previous status
+      await lockedTx.save().catch(() => {});
+    }
+    throw err;
+  }
+};
+
 module.exports = {
   initiateTransfer,
   getUserTransactions,
   getTransactionById,
   confirmTransaction,
-  escalateTransaction
+  escalateTransaction,
+  declineTransaction
 };
+

@@ -27,7 +27,7 @@ const transactionSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['PENDING', 'APPROVED', 'FLAGGED_FOR_REVIEW', 'CUSTOMER_VERIFICATION_REQUIRED', 'BLOCKED', 'REJECTED'],
+      enum: ['PENDING', 'APPROVED', 'FLAGGED_FOR_REVIEW', 'CUSTOMER_VERIFICATION_REQUIRED', 'BLOCKED', 'REJECTED', 'REFUNDED'],
       default: 'PENDING',
       required: true,
       index: true
@@ -50,10 +50,52 @@ const transactionSchema = new mongoose.Schema(
         reason: { type: String, required: true }
       }
     ],
+    // Explainable Risk Attribution Waterfall
+    attributionWaterfall: [
+      {
+        ruleCode: { type: String, required: true },
+        points: { type: Number, required: true },
+        reason: { type: String, required: true },
+        metric: { type: String },
+        observedValue: { type: String },
+        baselineValue: { type: String },
+        deviation: { type: String },
+        severity: { type: String }
+      }
+    ],
+    mitigatingSignals: [
+      {
+        ruleCode: { type: String },
+        metric: { type: String },
+        observedValue: { type: String },
+        baselineValue: { type: String },
+        status: { type: String }
+      }
+    ],
+    waterfallSummary: {
+      baseScore: { type: Number, default: 0 },
+      totalPenalties: { type: Number, default: 0 },
+      rawScore: { type: Number, default: 0 },
+      cappedScore: { type: Number, default: 0 },
+      riskTier: { type: String },
+      cappedDeduction: { type: Number, default: 0 }
+    },
     deviceContext: {
       deviceId: { type: String, default: 'unknown' },
       ipAddress: { type: String, default: 'unknown' },
-      userAgent: { type: String, default: 'unknown' }
+      userAgent: { type: String, default: 'unknown' },
+      isKnownDevice: { type: Boolean, default: false },
+      isKnownIp: { type: Boolean, default: false }
+    },
+    isDisputed: {
+      type: Boolean,
+      default: false,
+      index: true
+    },
+    disputeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Dispute',
+      default: null
     },
     behaviorContext: {
       historyAvg: { type: Number, default: 0 },
@@ -64,6 +106,41 @@ const transactionSchema = new mongoose.Schema(
       type: String,
       maxlength: [200, 'Note cannot exceed 200 characters'],
       trim: true
+    },
+    // SOC Case Management Lifecycle
+    caseStatus: {
+      type: String,
+      enum: ['UNASSIGNED', 'CLAIMED', 'UNDER_INVESTIGATION', 'RESOLVED_APPROVED', 'RESOLVED_REJECTED', 'CLOSED'],
+      default: 'UNASSIGNED',
+      index: true
+    },
+    assignedAnalyst: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+      index: true
+    },
+    claimedAt: {
+      type: Date,
+      default: null
+    },
+    casePriority: {
+      type: String,
+      enum: ['P1_CRITICAL', 'P2_HIGH', 'P3_MEDIUM'],
+      default: 'P3_MEDIUM',
+      index: true
+    },
+    investigationNotes: [
+      {
+        note: { type: String, required: true },
+        authorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        authorName: { type: String },
+        createdAt: { type: Date, default: Date.now }
+      }
+    ],
+    slaDeadline: {
+      type: Date,
+      default: null
     },
     resolutionStatus: {
       type: String,
@@ -108,6 +185,7 @@ const transactionSchema = new mongoose.Schema(
 // Compound indexes for performant historical timeline queries
 transactionSchema.index({ senderId: 1, createdAt: -1 });
 transactionSchema.index({ recipientId: 1, createdAt: -1 });
+transactionSchema.index({ status: 1, caseStatus: 1 });
 
 const Transaction = mongoose.model('Transaction', transactionSchema);
 

@@ -2,6 +2,20 @@ const mongoose = require('mongoose');
 
 const auditLogSchema = new mongoose.Schema(
   {
+    sequenceNumber: {
+      type: Number,
+      default: 1,
+      index: true
+    },
+    previousHash: {
+      type: String,
+      default: 'GENESIS_HASH_FRAUDSHIELD_ROOT'
+    },
+    hash: {
+      type: String,
+      default: null,
+      index: true
+    },
     timestamp: {
       type: Date,
       default: Date.now,
@@ -69,9 +83,12 @@ auditLogSchema.pre('save', function (next) {
   next();
 });
 
-auditLogSchema.pre(['updateOne', 'updateMany', 'findOneAndUpdate', 'deleteOne', 'deleteMany', 'findOneAndDelete', 'findOneAndRemove'], function (next) {
-  return immutableError(next);
-});
+auditLogSchema.pre(
+  ['updateOne', 'updateMany', 'findOneAndUpdate', 'deleteOne', 'deleteMany', 'findOneAndDelete', 'findOneAndRemove'],
+  function (next) {
+    return immutableError(next);
+  }
+);
 
 const AuditLog = mongoose.model('AuditLog', auditLogSchema);
 

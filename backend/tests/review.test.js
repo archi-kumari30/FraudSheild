@@ -39,7 +39,11 @@ describe('Module 7: Fraud Alert & Incident Review Tests', () => {
         email,
         password: 'Password123!'
       });
-    return res.body.data;
+    const data = res.body.data;
+    const userId = data.user._id || data.user.id;
+    const pinHash = await User.hashPin('123456');
+    await User.findByIdAndUpdate(userId, { transactionPinHash: pinHash });
+    return data;
   };
 
   const loginAdmin = async () => {
@@ -76,7 +80,7 @@ describe('Module 7: Fraud Alert & Incident Review Tests', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', 'flagged-device-x')
-      .send({ recipientId, amount: transferAmount, note: 'Payment under review' });
+      .send({ recipientId, amount: transferAmount, note: 'Payment under review', transactionPin: '123456' });
 
     // Escalate to admin review queue for investigation
     await request(app)

@@ -145,9 +145,20 @@ const CaseDetailModal = ({ isOpen, onClose, transaction, onResolved }) => {
 
             {/* Device Telemetry Card */}
             <div className="p-4 rounded-2xl border border-[#D4E2DC] bg-[#FAFCFA] space-y-3">
-              <h4 className="text-xs font-bold text-[#17211D] uppercase tracking-wider flex items-center gap-1.5">
-                <Monitor className="w-3.5 h-3.5 text-[#285C4D]" />
-                Device & Telemetry Context
+              <h4 className="text-xs font-bold text-[#17211D] uppercase tracking-wider flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Monitor className="w-3.5 h-3.5 text-[#285C4D]" />
+                  Device & Telemetry Context
+                </span>
+                {transaction.deviceContext?.isKnownDevice ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-[#EAF3EF] text-[#285C4D] border border-[#C8DCD2]">
+                    Known Device
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-[#FAF4EB] text-[#946625] border border-[#EAD7BA]">
+                    Unrecognized Device
+                  </span>
+                )}
               </h4>
               <div className="text-xs space-y-2">
                 <div>
@@ -156,11 +167,24 @@ const CaseDetailModal = ({ isOpen, onClose, transaction, onResolved }) => {
                     {transaction.deviceContext?.deviceId || 'Unknown'}
                   </span>
                 </div>
-                <div className="pt-2 border-t border-[#D4E2DC]">
-                  <span className="text-[#5A6E65] block font-medium">Client IP Address</span>
-                  <span className="font-mono text-[#17211D] text-xs block">
-                    {transaction.deviceContext?.ipAddress || 'Unknown'}
-                  </span>
+                <div className="pt-2 border-t border-[#D4E2DC] flex items-center justify-between">
+                  <div>
+                    <span className="text-[#5A6E65] block font-medium">Client IP Address</span>
+                    <span className="font-mono text-[#17211D] text-xs block">
+                      {transaction.deviceContext?.ipAddress || 'Unknown'}
+                    </span>
+                  </div>
+                  <div>
+                    {transaction.deviceContext?.isKnownIp ? (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-[#EAF3EF] text-[#285C4D]">
+                        Recognized IP
+                      </span>
+                    ) : (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-[#FAF4EB] text-[#946625]">
+                        New IP
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="pt-2 border-t border-[#D4E2DC]">
                   <span className="text-[#5A6E65] block font-medium">User-Agent Header</span>

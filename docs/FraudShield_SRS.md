@@ -196,6 +196,9 @@ FraudShield strictly enforces **2 user roles**:
 - **FR-AUTH-05:** The system shall allow users to retrieve and update their personal profile details (excluding balance and role).
 - **FR-AUTH-06:** The system shall support secure password recovery via `/api/auth/forgot-password` and `/api/auth/reset-password`. Password reset tokens must be cryptographically generated (32-byte hex), hashed with SHA-256 before database persistence, and bounded by a 15-minute expiration window.
 - **FR-AUTH-07:** The administrative system shall provide aggregated queue metrics (`/api/admin/reviews/stats`) reporting pending reviews, total screened transfers, settled clean, blocked risk, and active accounts.
+- **FR-AUTH-08:** The system shall support mandatory 6-digit Transaction PIN configuration. Users may initialize their PIN via `POST /api/auth/pin/setup` and reset forgotten or compromised PINs via `POST /api/auth/pin/reset` with account password re-authentication. PINs are salted and hashed with `bcrypt`.
+- **FR-AUTH-09:** The system shall enforce rate limiting and 3-attempt automated 15-minute lockouts on incorrect PIN entries (`401 INVALID_PIN`) to prevent brute-force exploitation.
+- **FR-AUTH-10:** In development environments, the system shall automatically provision a baseline administrator (`admin@fraudshield.internal`) using credentials configured via environment variables (`ADMIN_EMAIL`, `ADMIN_PASSWORD`).
 
 ### 7.2 Module: Simulated Digital Wallet & Beneficiary Management
 - **FR-WAL-01:** Upon registration, each customer shall be automatically provisioned an internal simulated digital wallet.
@@ -216,9 +219,9 @@ FraudShield strictly enforces **2 user roles**:
 > **Important Clarification:** The `x-device-id` value generated and persisted by the frontend is an application-level device identifier for fraud-rule evaluation. It is NOT a secure device fingerprint and must not be treated as proof of device identity.
 
 ### 7.4 Module: Transaction Processing Engine
-- **FR-TX-01:** Customers shall initiate a transfer specifying recipient account/beneficiary, amount (in INR / ₹), and optional transfer note.
-- **FR-TX-02:** The system shall validate transaction parameters (positive non-zero amount, sufficient sender `availableBalance`, active recipient account, valid sender identity).
-- **FR-TX-03:** Upon passing baseline validation, the transaction shall be routed immediately into the Rule-Based Fraud Detection Engine before balance mutation.
+- **FR-TX-01:** Customers shall initiate a transfer specifying recipient account/beneficiary, amount (in INR / ₹), optional transfer note, and mandatory 6-digit Transaction PIN.
+- **FR-TX-02:** The system shall validate transaction parameters (positive non-zero amount, sufficient sender `availableBalance`, active recipient account, valid sender identity) and authenticate the 6-digit Transaction PIN against the stored hash before initiating fraud analysis or financial movement. If no PIN is configured, the system shall reject with `400 TRANSACTION_PIN_NOT_SET`. If invalid, the system shall reject with `401 INVALID_PIN`.
+- **FR-TX-03:** Upon passing baseline and PIN validation, the transaction shall be routed immediately into the Rule-Based Fraud Detection Engine before balance mutation.
 - **FR-TX-04:** The transaction status and wallet balances shall be updated based on the engine outcome:
   - **If Risk Level = `LOW` (Score 0–30):**
     - Status: `APPROVED`.
@@ -229,11 +232,14 @@ FraudShield strictly enforces **2 user roles**:
     - Escrow Hold: Sender's `availableBalance` is debited by amount, and `heldBalance` is credited by amount.
     - Recipient balance is NOT modified (recipient receives ₹0).
     - Transaction does NOT require 24/7 admin availability and is NOT enqueued directly to Admin Review.
-    - Customer is prompted to verify initiation via `POST /api/transactions/:id/confirm`. Upon confirmation and fresh security re-evaluation, acceptable transactions settle to `APPROVED` (held balance released to recipient); if elevated to HIGH, transaction is `BLOCKED` and escrow refunded to sender.
-    - If customer reports unauthorized payment ("I Didn't Initiate This") via `POST /api/transactions/:id/escalate`, status transitions to `FLAGGED_FOR_REVIEW` and enqueues to the Admin Review Queue.
+    - Customer is prompted to self-resolve:
+      - **Confirm (`POST /api/transactions/:id/confirm`):** Verified with 6-digit PIN and re-screened. Succeeded transfers settle to `APPROVED` (held funds released to recipient); if elevated to HIGH, transaction is `BLOCKED` and escrow refunded to sender.
+      - **Decline (`POST /api/transactions/:id/decline`):** Held amount is atomically restored to `availableBalance`, recipient receives ₹0, status transitions to `REJECTED`, security alert and audit log are created. Duplicate attempts are rejected by CAS guards.
+      - **Escalate (`POST /api/transactions/:id/escalate`):** If customer reports unauthorized activity, status transitions to `FLAGGED_FOR_REVIEW` for admin investigation.
   - **If Risk Level = `HIGH` (Score 71–100):**
     - Status: `BLOCKED`.
     - Transaction execution is aborted; no balance is deducted from sender.
+- **FR-TX-05:** Payment idempotency shall be enforced via `Idempotency-Key` headers. Duplicate identical requests shall return cached results; conflicting payload reuse shall be rejected with `409 IDEMPOTENCY_KEY_PAYLOAD_MISMATCH`.
 
 ### 7.5 Module: Rule-Based Fraud Detection & Risk Scoring
 - **FR-FRD-01:** The engine shall evaluate every incoming transaction against the 6 approved deterministic fraud rules.
@@ -331,6 +337,7 @@ The complete end-to-end lifecycle of a transaction through FraudShield is illust
     |
     +---> Option 1: Customer confirms payment ("Confirm Payment")
     |       -> POST /api/transactions/:id/confirm
+    |       -> Requires 6-digit Transaction PIN verification
     |       -> Atomic concurrency lock (status: 'PENDING')
     |       -> Fresh Pre-Settlement Fraud Re-Evaluation
     |       -> If Acceptable:
@@ -340,7 +347,15 @@ The complete end-to-end lifecycle of a transaction through FraudShield is illust
     |            Sender heldBalance - Amount | Sender availableBalance + Amount (Refunded)
     |            Status: BLOCKED
     |
-    +---> Option 2: Customer reports unauthorized payment ("I Didn't Initiate This")
+    +---> Option 2: Customer declines payment ("Decline & Refund")
+    |       -> POST /api/transactions/:id/decline
+    |       -> Atomic CAS lock (status: 'CUSTOMER_VERIFICATION_REQUIRED')
+    |       -> Sender heldBalance - Amount | Sender availableBalance + Amount (Restored)
+    |       -> Recipient balance unchanged (receives ₹0)
+    |       -> Status: REJECTED
+    |       -> Emits Security Alert & Cryptographic Audit Event
+    |
+    +---> Option 3: Customer reports unauthorized payment ("I Didn't Initiate This")
             -> POST /api/transactions/:id/escalate
             -> Status: FLAGGED_FOR_REVIEW
             v
@@ -796,4 +811,73 @@ The implementation is verified against three standard end-to-end scenarios:
   - Amount: ₹60,000 (`RULE_AMT_EXTREME` +35) | New device (`RULE_DEVICE_NEW` +25) | New beneficiary (`RULE_BENEFICIARY_NEW` +30)
   - Score: 90 / 100 | Risk Level: `HIGH` | Status: `BLOCKED`
   - Balance Impact: Zero debit, zero credit. Alert logged. Explainability breakdown shows why it was blocked.
+
+---
+
+## 25. Production Hardening: 11 Advanced Architectural Guarantees (v2.0 Implementation)
+
+FraudShield v2.0 introduces 11 foundational architectural guarantees across backend financial correctness, deterministic fraud intelligence, SOC case forensics, dispute arbitration, and zero-trust device management:
+
+### 25.1 MongoDB ACID Financial Invariants
+1. **Multi-Document Atomic Guarantee:** All fund-moving routines (sender debit, recipient credit, escrow allocation, escrow refund, dispute clawback) execute inside Mongoose client sessions (`withTransaction`).
+2. **Double-Entry Balance Invariance:** Total system funds $\sum (\text{availableBalance} + \text{heldBalance})$ remain strictly conserved during all approved, held, and refunded lifecycles.
+3. **Resilient Fallback:** Automatically detects standalone MongoDB nodes in development/test and executes operations sequentially with equivalent state checks.
+
+### 25.2 Payment API Idempotency Specification
+1. **Header Requirement:** All payment mutations (`POST /api/transactions`, `POST /api/transactions/:id/confirm`) accept and enforce `Idempotency-Key` (UUIDv4/string).
+2. **Payload Fingerprinting:** A cryptographic SHA-256 hash of `userId + endpoint + sorted(payload)` is computed.
+3. **Concurrent Replay Handling:** If an `IN_PROGRESS` transaction is pending (< 120s), concurrent calls receive `409 CONCURRENT_REQUEST_IN_PROGRESS`.
+4. **Cached Replay:** Repeated calls with the exact same key and payload replay the cached HTTP response and status code without re-executing balance mutations or fraud rules.
+5. **Conflict Protection:** Reusing an existing key with altered payload fields strictly rejects with `409 IDEMPOTENCY_KEY_PAYLOAD_MISMATCH`.
+
+### 25.3 Concurrency Control & State Transition Invariants (CAS)
+1. **Atomic CAS State Locks:** State progressions query and update conditionally in a single operation (`findOneAndUpdate({ _id, status: CURRENT })`).
+2. **Single-Resolution Guarantee:** Only one SOC analyst can claim or resolve an escalated case; racing requests fail atomically with conflict errors.
+3. **Double-Refund Prevention:** An escrow hold or dispute can only transition from `HELD` / `OPEN` to refunded once.
+
+### 25.4 Cold-Start Fraud Rules & Baseline Dynamics
+1. **Cold-Start Hard Boundary:** Users with fewer than 3 historical transactions are subjected to a strict ₹50,000 threshold. Transfers above ₹50,000 trigger `RULE_AMT_EXTREME` (+35 points) deterministically.
+2. **Behavioral Rolling Window:** Once an account reaches $\ge 3$ transactions, the baseline dynamically switches to a 30-day mean & standard deviation calculation.
+
+### 25.5 Comprehensive Pre-Controller Schema Validation
+1. **Boundary Guarding:** All incoming client payloads undergo Joi validation before controller invocation.
+2. **Sanitization:** Strict limits on amounts (positive numbers, maximum ₹5,000,000), notes ($\ge 10$ characters for analyst resolutions), PIN format (exactly 6 digits), and UUIDs.
+
+### 25.6 Explainable Risk Attribution Waterfall
+1. **Deterministic Attribution Structure:** Fraud engine outputs a structured mathematical breakdown:
+   - `baseScore: 0`
+   - `ruleContributions`: `[{ ruleCode, points, reason, metric, baseline, observed }]`
+   - `rawScore`: Uncapped additive sum
+   - `cappedScore`: $\min(\text{rawScore}, 100)$
+   - `mitigatingSignals`: Clean behavioral attributes reducing risk perception
+2. **Frontend Visual Waterfall:** The admin portal renders a visual waterfall diagram detailing baseline vs. observed transaction parameters.
+
+### 25.7 Attack-Chain Forensic Timeline
+1. **Correlated Security Narrative:** `/api/admin/reviews/:id/timeline` aggregates disparate records into a unified chronological vector:
+   - Client authentication & IP/User-Agent registration
+   - Beneficiary additions & velocity bursts
+   - Payment attempts & rule-by-rule engine triggers
+   - User self-verification / escalation decisions
+   - Analyst claiming, internal notes, and administrative verdicts
+2. **Investigative Speed:** Equips Tier-1 SOC analysts with complete contextual history without requiring cross-database queries.
+
+### 25.8 Enterprise SOC Case Management Workflow
+1. **Case State Lifecycle:** `UNASSIGNED` $\to$ `CLAIMED` $\to$ `UNDER_INVESTIGATION` $\to$ `RESOLVED`.
+2. **Ownership Locking:** Analysts claim cases (`POST /claim`) to prevent duplicate triage.
+3. **Audited Notes:** Collaborative investigation logs (`POST /notes`) preserve persistent notes linked to the analyst ID and timestamp.
+4. **Mandatory Rationale:** Resolutions mandate an audited rationale note of at least 10 characters.
+
+### 25.9 Post-Settlement Dispute Arbitration & Reversible Escrow
+1. **Dispute Lifecycle:** Sender raises dispute $\to$ Recipient receives notification and submits evidence $\to$ Admin reviews evidence $\to$ Admin resolves (`REFUND` or `REJECT`).
+2. **Atomic Clawback:** Approved refunds atomically debit the recipient's available balance and credit the sender.
+
+### 25.10 Cryptographic Tamper-Evident Audit Ledger
+1. **Sequential SHA-256 Hash Chaining:** Every audit log document contains `previousHash` pointing to the immediately preceding log.
+2. **Hash Construction:** `sha256(index + timestamp + action + actorId + previousHash + JSON.stringify(details))`.
+3. **Chain Verification Routine:** Endpoint `/api/admin/audit-logs/verify` recursively verifies mathematical hash validity across all blocks, pinpointing index and timestamp if any record is mutated or severed.
+
+### 25.11 Zero-Trust Device Management & 6-Digit Transaction PIN
+1. **Device Registry & Revocation:** Customers can view all active devices and revoke compromised fingerprints (`DELETE /api/devices/:id`), preventing future unauthorized sessions.
+2. **6-Digit Step-Up PIN:** Salted and hashed via bcrypt; enforced as a secondary authentication factor during medium-risk payment confirmations (`x-transaction-pin` header).
+
 

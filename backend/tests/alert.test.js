@@ -37,7 +37,11 @@ describe('Module 7: Alert Service Tests', () => {
         email,
         password: 'Password123!'
       });
-    return res.body.data;
+    const data = res.body.data;
+    const userId = data.user._id || data.user.id;
+    const pinHash = await User.hashPin('123456');
+    await User.findByIdAndUpdate(userId, { transactionPinHash: pinHash });
+    return data;
   };
 
   // TC-M7-001: Automatic Alert Generation on Flagged Transaction
@@ -65,7 +69,7 @@ describe('Module 7: Alert Service Tests', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', 'unregistered-phone')
-      .send({ recipientId, amount: 15000, note: 'Trigger review alert' });
+      .send({ recipientId, amount: 15000, note: 'Trigger review alert', transactionPin: '123456' });
 
     expect(txRes.status).toBe(202);
 
@@ -100,7 +104,7 @@ describe('Module 7: Alert Service Tests', () => {
       .post('/api/transactions')
       .set('Authorization', `Bearer ${sender.token}`)
       .set('x-device-id', 'attacker-phone')
-      .send({ recipientId, amount: 55000 });
+      .send({ recipientId, amount: 55000, transactionPin: '123456' });
 
     // Retrieve alerts via API
     const listRes = await request(app)

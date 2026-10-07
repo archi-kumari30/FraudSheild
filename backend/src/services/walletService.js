@@ -84,19 +84,23 @@ const depositFunds = async (userId, amount) => {
 
 /**
  * Execute an approved direct transfer between sender and recipient
+ * Supports optional MongoDB session for ACID transaction wrapping
  * @param {string|ObjectId} senderId
  * @param {string|ObjectId} recipientId
  * @param {number} amount
+ * @param {ClientSession} [session]
  * @returns {Promise<Object>}
  */
-const executeApprovedTransfer = async (senderId, recipientId, amount) => {
+const executeApprovedTransfer = async (senderId, recipientId, amount, session = null) => {
   const roundedAmount = Math.round(Number(amount) * 100) / 100;
+  const options = { new: true };
+  if (session) options.session = session;
 
   // Atomically debit sender verifying availableBalance >= roundedAmount
   const senderWallet = await Wallet.findOneAndUpdate(
     { userId: senderId, availableBalance: { $gte: roundedAmount } },
     { $inc: { availableBalance: -roundedAmount } },
-    { new: true }
+    options
   );
 
   if (!senderWallet) {
@@ -107,10 +111,13 @@ const executeApprovedTransfer = async (senderId, recipientId, amount) => {
   }
 
   // Atomically credit recipient
+  const recipientOptions = { new: true, upsert: true, setDefaultsOnInsert: true };
+  if (session) recipientOptions.session = session;
+
   const recipientWallet = await Wallet.findOneAndUpdate(
     { userId: recipientId },
     { $inc: { availableBalance: roundedAmount } },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
+    recipientOptions
   );
 
   return { senderWallet, recipientWallet };
@@ -120,16 +127,19 @@ const executeApprovedTransfer = async (senderId, recipientId, amount) => {
  * Execute an escrow hold (reserve funds) for a flagged transaction
  * @param {string|ObjectId} senderId
  * @param {number} amount
+ * @param {ClientSession} [session]
  * @returns {Promise<Wallet>}
  */
-const executeEscrowHold = async (senderId, amount) => {
+const executeEscrowHold = async (senderId, amount, session = null) => {
   const roundedAmount = Math.round(Number(amount) * 100) / 100;
+  const options = { new: true };
+  if (session) options.session = session;
 
   // Atomically transfer from availableBalance to heldBalance
   const senderWallet = await Wallet.findOneAndUpdate(
     { userId: senderId, availableBalance: { $gte: roundedAmount } },
     { $inc: { availableBalance: -roundedAmount, heldBalance: roundedAmount } },
-    { new: true }
+    options
   );
 
   if (!senderWallet) {
@@ -147,15 +157,18 @@ const executeEscrowHold = async (senderId, amount) => {
  * @param {string|ObjectId} senderId
  * @param {string|ObjectId} recipientId
  * @param {number} amount
+ * @param {ClientSession} [session]
  * @returns {Promise<Object>}
  */
-const releaseEscrowAndSettle = async (senderId, recipientId, amount) => {
+const releaseEscrowAndSettle = async (senderId, recipientId, amount, session = null) => {
   const roundedAmount = Math.round(Number(amount) * 100) / 100;
+  const senderOptions = { new: true };
+  if (session) senderOptions.session = session;
 
   const senderWallet = await Wallet.findOneAndUpdate(
     { userId: senderId, heldBalance: { $gte: roundedAmount } },
     { $inc: { heldBalance: -roundedAmount } },
-    { new: true }
+    senderOptions
   );
 
   if (!senderWallet) {
@@ -165,10 +178,13 @@ const releaseEscrowAndSettle = async (senderId, recipientId, amount) => {
     throw error;
   }
 
+  const recipientOptions = { new: true, upsert: true, setDefaultsOnInsert: true };
+  if (session) recipientOptions.session = session;
+
   const recipientWallet = await Wallet.findOneAndUpdate(
     { userId: recipientId },
     { $inc: { availableBalance: roundedAmount } },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
+    recipientOptions
   );
 
   return { senderWallet, recipientWallet };
@@ -178,15 +194,18 @@ const releaseEscrowAndSettle = async (senderId, recipientId, amount) => {
  * Release escrow hold and refund back to sender (analyst rejection)
  * @param {string|ObjectId} senderId
  * @param {number} amount
+ * @param {ClientSession} [session]
  * @returns {Promise<Wallet>}
  */
-const refundEscrow = async (senderId, amount) => {
+const refundEscrow = async (senderId, amount, session = null) => {
   const roundedAmount = Math.round(Number(amount) * 100) / 100;
+  const options = { new: true };
+  if (session) options.session = session;
 
   const senderWallet = await Wallet.findOneAndUpdate(
     { userId: senderId, heldBalance: { $gte: roundedAmount } },
     { $inc: { heldBalance: -roundedAmount, availableBalance: roundedAmount } },
-    { new: true }
+    options
   );
 
   if (!senderWallet) {
@@ -199,6 +218,47 @@ const refundEscrow = async (senderId, amount) => {
   return senderWallet;
 };
 
+/**
+ * Execute an approved dispute refund: atomically debit recipient's available balance and credit sender's available balance
+ * Enforces that recipient available balance is >= amount (prevents negative balance)
+ * @param {string|ObjectId} senderId
+ * @param {string|ObjectId} recipientId
+ * @param {number} amount
+ * @param {ClientSession} [session]
+ * @returns {Promise<Object>}
+ */
+const executeDisputeRefund = async (senderId, recipientId, amount, session = null) => {
+  const roundedAmount = Math.round(Number(amount) * 100) / 100;
+  const recipientOptions = { new: true };
+  if (session) recipientOptions.session = session;
+
+  // 1. Atomically debit recipient ONLY if recipient availableBalance >= roundedAmount
+  const recipientWallet = await Wallet.findOneAndUpdate(
+    { userId: recipientId, availableBalance: { $gte: roundedAmount } },
+    { $inc: { availableBalance: -roundedAmount } },
+    recipientOptions
+  );
+
+  if (!recipientWallet) {
+    const error = new Error('Recipient has insufficient available balance to process refund. Balance cannot drop below zero.');
+    error.status = 400;
+    error.code = 'INSUFFICIENT_FUNDS_FOR_REFUND';
+    throw error;
+  }
+
+  // 2. Atomically credit sender
+  const senderOptions = { new: true, upsert: true, setDefaultsOnInsert: true };
+  if (session) senderOptions.session = session;
+
+  const senderWallet = await Wallet.findOneAndUpdate(
+    { userId: senderId },
+    { $inc: { availableBalance: roundedAmount } },
+    senderOptions
+  );
+
+  return { senderWallet, recipientWallet };
+};
+
 module.exports = {
   createWallet,
   getWallet,
@@ -206,5 +266,6 @@ module.exports = {
   executeApprovedTransfer,
   executeEscrowHold,
   releaseEscrowAndSettle,
-  refundEscrow
+  refundEscrow,
+  executeDisputeRefund
 };

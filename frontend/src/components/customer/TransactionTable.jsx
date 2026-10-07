@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { ArrowUpRight, ArrowDownLeft, History, Search, Loader2, CheckCircle2, AlertCircle, X, ShieldAlert } from 'lucide-react';
 import StatusBadge from '../common/StatusBadge';
+import DisputePaymentModal from './DisputePaymentModal';
+import Modal from '../common/Modal';
 import { useAuth } from '../../context/AuthContext';
 import { useAlerts } from '../../context/AlertContext';
 import axiosClient from '../../api/axiosClient';
@@ -11,8 +13,13 @@ const TransactionTable = ({ transactions = [], loading = false, onRefresh }) => 
   const [filter, setFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [confirmingId, setConfirmingId] = useState(null);
+  const [decliningId, setDecliningId] = useState(null);
+  const [confirmModalTx, setConfirmModalTx] = useState(null);
+  const [confirmPinInput, setConfirmPinInput] = useState('');
+  const [confirmPinError, setConfirmPinError] = useState('');
   const [resolvedTxMap, setResolvedTxMap] = useState({});
   const [notification, setNotification] = useState(null);
+  const [disputeModalTx, setDisputeModalTx] = useState(null);
 
   const formatINR = (val) => {
     return new Intl.NumberFormat('en-IN', {
@@ -20,6 +27,122 @@ const TransactionTable = ({ transactions = [], loading = false, onRefresh }) => 
       currency: 'INR',
       maximumFractionDigits: 2
     }).format(val || 0);
+  };
+
+  const handleInlineDecline = async (tx) => {
+    const txId = tx._id;
+    if (decliningId || confirmingId || resolvedTxMap[txId]) return;
+
+    setDecliningId(txId);
+    setNotification(null);
+
+    try {
+      const res = await axiosClient.post(`/transactions/${txId}/decline`, {
+        reason: 'Declined by customer from transaction history'
+      });
+      const formattedAmount = formatINR(tx.amount);
+
+      setResolvedTxMap((prev) => ({
+        ...prev,
+        [txId]: {
+          status: 'REJECTED',
+          message: 'Payment Declined'
+        }
+      }));
+
+      setNotification({
+        type: 'info',
+        title: 'Payment Declined',
+        message: `Your payment of ${formattedAmount} has been declined. Held escrow funds have been restored to your available balance.`
+      });
+
+      if (refreshWallet) await refreshWallet();
+      if (fetchAlerts) await fetchAlerts();
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      setNotification({
+        type: 'error',
+        title: 'Decline Failed',
+        message: err.message || 'Failed to decline transaction.'
+      });
+    } finally {
+      setDecliningId(null);
+    }
+  };
+
+  const handleConfirmWithPin = async (e) => {
+    if (e) e.preventDefault();
+    if (!confirmModalTx) return;
+
+    const txId = confirmModalTx._id;
+    if (!confirmPinInput || confirmPinInput.length !== 6) {
+      setConfirmPinError('Please enter your 6-digit Transaction PIN.');
+      return;
+    }
+
+    setConfirmingId(txId);
+    setConfirmPinError('');
+
+    try {
+      const res = await axiosClient.post(`/transactions/${txId}/confirm`, {
+        transactionPin: confirmPinInput.trim()
+      });
+      const newStatus = res.data?.status || res.data?.transaction?.status || 'APPROVED';
+      const formattedAmount = formatINR(confirmModalTx.amount);
+
+      setResolvedTxMap((prev) => ({
+        ...prev,
+        [txId]: {
+          status: newStatus,
+          message: newStatus === 'APPROVED' ? 'Payment Completed' : 'Payment Blocked'
+        }
+      }));
+
+      if (newStatus === 'APPROVED') {
+        setNotification({
+          type: 'success',
+          title: 'Payment Completed',
+          message: `Your payment of ${formattedAmount} has been verified and settled to the recipient.`
+        });
+      } else if (newStatus === 'BLOCKED') {
+        setNotification({
+          type: 'blocked',
+          title: 'Payment Blocked',
+          message: `Payment of ${formattedAmount} was blocked during security screening. Escrow funds refunded to your wallet; recipient received ₹0.`
+        });
+      }
+
+      setConfirmModalTx(null);
+      setConfirmPinInput('');
+      if (refreshWallet) await refreshWallet();
+      if (fetchAlerts) await fetchAlerts();
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      if (err.data?.status === 'BLOCKED' || err.status === 'BLOCKED') {
+        const formattedAmount = formatINR(confirmModalTx.amount);
+        setResolvedTxMap((prev) => ({
+          ...prev,
+          [txId]: {
+            status: 'BLOCKED',
+            message: 'Payment Blocked'
+          }
+        }));
+        setNotification({
+          type: 'blocked',
+          title: 'Payment Blocked',
+          message: `Payment of ${formattedAmount} was blocked during security screening. Escrow funds refunded to your wallet; recipient received ₹0.`
+        });
+        setConfirmModalTx(null);
+        setConfirmPinInput('');
+        if (refreshWallet) await refreshWallet();
+        if (fetchAlerts) await fetchAlerts();
+        if (onRefresh) await onRefresh();
+      } else {
+        setConfirmPinError(err.message || 'Verification failed. Please check your transaction PIN.');
+      }
+    } finally {
+      setConfirmingId(null);
+    }
   };
 
   const handleInlineConfirm = async (tx) => {
@@ -142,7 +265,8 @@ const TransactionTable = ({ transactions = [], loading = false, onRefresh }) => 
               { id: 'APPROVED', label: 'Approved' },
               { id: 'CUSTOMER_VERIFICATION_REQUIRED', label: 'Verification Required' },
               { id: 'FLAGGED_FOR_REVIEW', label: 'In Review' },
-              { id: 'BLOCKED', label: 'Blocked' }
+              { id: 'BLOCKED', label: 'Blocked' },
+              { id: 'REFUNDED', label: 'Refunded' }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -282,8 +406,25 @@ const TransactionTable = ({ transactions = [], loading = false, onRefresh }) => 
                             <>
                               <StatusBadge status={currentStatus} />
                               {currentStatus === 'APPROVED' && (
-                                <div className="text-[10px] text-[#1E473B] font-medium mt-1">
-                                  Payment completed
+                                <div className="mt-1 flex items-center justify-between gap-1.5 flex-wrap">
+                                  <span className="text-[10px] text-[#1E473B] font-medium">
+                                    Payment completed
+                                  </span>
+                                  {isOutbound && (
+                                    tx.isDisputed ? (
+                                      <span className="text-[10px] font-semibold text-[#B45309] bg-[#FEF3C7] px-1.5 py-0.5 rounded border border-[#FDE68A]">
+                                        Disputed
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => setDisputeModalTx(tx)}
+                                        className="text-[10px] text-[#5A6E65] hover:text-[#8C3E3A] font-semibold underline transition-colors"
+                                      >
+                                        Dispute
+                                      </button>
+                                    )
+                                  )}
                                 </div>
                               )}
                               {currentStatus === 'CUSTOMER_VERIFICATION_REQUIRED' && (
@@ -292,21 +433,35 @@ const TransactionTable = ({ transactions = [], loading = false, onRefresh }) => 
                                     Verification Required
                                   </div>
                                   {isOutbound && !resolvedTxMap[tx._id] && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleInlineConfirm(tx)}
-                                      disabled={confirmingId !== null || !!resolvedTxMap[tx._id]}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#285C4D] text-white text-[10px] font-bold hover:bg-[#1d453a] transition-colors shadow-xs disabled:opacity-50"
-                                    >
-                                      {confirmingId === tx._id ? (
-                                        <>
-                                          <Loader2 className="w-3 h-3 animate-spin" />
-                                          <span>Verifying...</span>
-                                        </>
-                                      ) : (
-                                        <span>Confirm Payment</span>
-                                      )}
-                                    </button>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setConfirmModalTx(tx);
+                                          setConfirmPinInput('');
+                                          setConfirmPinError('');
+                                        }}
+                                        disabled={confirmingId !== null || decliningId !== null || !!resolvedTxMap[tx._id]}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#285C4D] text-white text-[10px] font-bold hover:bg-[#1d453a] transition-colors shadow-xs disabled:opacity-50"
+                                      >
+                                        <span>Confirm</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleInlineDecline(tx)}
+                                        disabled={confirmingId !== null || decliningId !== null || !!resolvedTxMap[tx._id]}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-white border border-[#E6BFBD] text-[#8C3E3A] text-[10px] font-bold hover:bg-[#FBF0EF] transition-colors disabled:opacity-50"
+                                      >
+                                        {decliningId === tx._id ? (
+                                          <>
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                            <span>Declining...</span>
+                                          </>
+                                        ) : (
+                                          <span>Decline</span>
+                                        )}
+                                      </button>
+                                    </div>
                                   )}
                                 </div>
                               )}
@@ -323,6 +478,11 @@ const TransactionTable = ({ transactions = [], loading = false, onRefresh }) => 
                               {currentStatus === 'REJECTED' && (
                                 <div className="text-[10px] text-[#8C3E3A] font-medium mt-1">
                                   Review rejected — funds refunded
+                                </div>
+                              )}
+                              {currentStatus === 'REFUNDED' && (
+                                <div className="text-[10px] text-[#1E3A5F] font-medium mt-1">
+                                  {isOutbound ? 'Refunded to your wallet' : 'Debited via dispute refund'}
                                 </div>
                               )}
                             </>
@@ -346,6 +506,95 @@ const TransactionTable = ({ transactions = [], loading = false, onRefresh }) => 
           </table>
         </div>
       )}
+
+      {/* Payment Dispute Modal */}
+      <DisputePaymentModal
+        isOpen={!!disputeModalTx}
+        onClose={() => setDisputeModalTx(null)}
+        transaction={disputeModalTx}
+        onDisputeCreated={(dispute) => {
+          if (disputeModalTx) {
+            setResolvedTxMap((prev) => ({
+              ...prev,
+              [disputeModalTx._id]: {
+                ...disputeModalTx,
+                isDisputed: true
+              }
+            }));
+          }
+          if (onRefresh) onRefresh();
+        }}
+      />
+
+      {/* Confirm Payment with PIN Modal */}
+      <Modal
+        isOpen={!!confirmModalTx}
+        onClose={() => {
+          if (!confirmingId) {
+            setConfirmModalTx(null);
+            setConfirmPinInput('');
+            setConfirmPinError('');
+          }
+        }}
+        title="Confirm Payment Initiation"
+      >
+        <form onSubmit={handleConfirmWithPin} className="space-y-4">
+          <p className="text-xs text-[#5A6E65]">
+            This payment of <strong className="text-[#17211D] font-mono font-bold">{formatINR(confirmModalTx?.amount)}</strong> is temporarily held in escrow. Please enter your 6-digit Transaction PIN to confirm that you initiated this transfer.
+          </p>
+
+          {confirmPinError && (
+            <div className="p-2.5 rounded-lg bg-[#FBF0EF] border border-[#E6BFBD] text-[#8C3E3A] text-xs font-semibold">
+              {confirmPinError}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-[#17211D] block">
+              6-Digit Transaction PIN
+            </label>
+            <input
+              type="password"
+              maxLength={6}
+              value={confirmPinInput}
+              onChange={(e) => setConfirmPinInput(e.target.value.replace(/\D/g, ''))}
+              placeholder="••••••"
+              autoFocus
+              disabled={confirmingId !== null}
+              className="w-full px-3.5 py-2.5 rounded-lg bg-[#FAFCFA] border border-[#D4E2DC] text-center font-mono text-base tracking-widest text-[#17211D] focus:outline-none focus:border-[#285C4D]"
+            />
+          </div>
+
+          <div className="pt-2 flex items-center justify-end gap-2 border-t border-[#D4E2DC]">
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmModalTx(null);
+                setConfirmPinInput('');
+                setConfirmPinError('');
+              }}
+              disabled={confirmingId !== null}
+              className="px-3.5 py-2 rounded-lg border border-[#D4E2DC] text-[#5A6E65] text-xs font-medium hover:bg-[#EDF6F1]"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={confirmingId !== null || confirmPinInput.length !== 6}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#285C4D] text-white text-xs font-medium hover:bg-[#1d453a] disabled:opacity-50 transition-colors shadow-xs"
+            >
+              {confirmingId ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Verifying...</span>
+                </>
+              ) : (
+                <span>Confirm & Release</span>
+              )}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

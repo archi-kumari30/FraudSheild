@@ -11,7 +11,8 @@ import {
   Settings,
   LogOut,
   Menu,
-  X
+  X,
+  Scale
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import axiosClient from '../api/axiosClient';
@@ -23,6 +24,7 @@ const AdminLayout = () => {
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingDisputesCount, setPendingDisputesCount] = useState(0);
 
   useEffect(() => {
     axiosClient
@@ -33,6 +35,18 @@ const AdminLayout = () => {
         }
       })
       .catch((err) => console.warn('Could not fetch review count:', err.message));
+
+    axiosClient
+      .get('/admin/disputes')
+      .then((res) => {
+        if (res.success && Array.isArray(res.data?.disputes)) {
+          const actionable = res.data.disputes.filter((d) =>
+            ['OPEN', 'RECIPIENT_RESPONDED'].includes(d.status)
+          );
+          setPendingDisputesCount(actionable.length);
+        }
+      })
+      .catch((err) => console.warn('Could not fetch dispute count:', err.message));
   }, [location.pathname]);
 
   const handleLogout = () => {
@@ -49,6 +63,12 @@ const AdminLayout = () => {
       label: 'Review Queue',
       icon: AlertTriangle,
       badge: pendingCount > 0 ? pendingCount : null
+    },
+    {
+      to: '/admin/disputes',
+      label: 'Disputes Queue',
+      icon: Scale,
+      badge: pendingDisputesCount > 0 ? pendingDisputesCount : null
     },
     { to: '/admin/alerts', label: 'Fraud Alerts', icon: Bell },
     { to: '/admin/audit-logs', label: 'Audit Logs', icon: FileText },

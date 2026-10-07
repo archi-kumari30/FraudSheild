@@ -257,7 +257,8 @@ When a transaction is classified as `CUSTOMER_VERIFICATION_REQUIRED` (or escalat
 1. **Fund Reservation:** The transaction amount is atomically transferred from the sender's `availableBalance` to their `heldBalance`.
 2. **Double-Spend Prevention:** The held funds are inaccessible to the sender for subsequent transfers or withdrawals while the verification or review is active.
 3. **Resolution Pathways:**
-   - **Customer Self-Verification (`POST /api/transactions/:id/confirm`):** Atomically locks the transaction (`PENDING`), re-evaluates risk. If acceptable, sender `heldBalance` is debited and recipient `availableBalance` is credited (status becomes `APPROVED`). If elevated to HIGH, sender `heldBalance` is refunded to sender `availableBalance` (status becomes `BLOCKED`).
+   - **Customer Self-Verification (`POST /api/transactions/:id/confirm`):** Atomically locks the transaction (`PENDING`), re-evaluates risk with mandatory 6-digit PIN verification. If acceptable, sender `heldBalance` is debited and recipient `availableBalance` is credited (status becomes `APPROVED`). If elevated to HIGH, sender `heldBalance` is refunded to sender `availableBalance` (status becomes `BLOCKED`).
+   - **Customer Decline & Self-Cancellation (`POST /api/transactions/:id/decline`):** Customer cancels an escrowed payment. The held amount is atomically transferred back from `heldBalance` to `availableBalance`, recipient receives ₹0, status transitions to `REJECTED`, and an audit event plus customer security alert are emitted. Duplicate decline attempts are blocked via CAS guards.
    - **Customer Escalation (`POST /api/transactions/:id/escalate`):** If customer reports "I Didn't Initiate This", status transitions to `FLAGGED_FOR_REVIEW` and is enqueued into the Admin Review Queue.
    - **Admin Review (`POST /api/admin/reviews/:id/resolve`):** For escalated cases, Admin manually approves (sender `heldBalance` debited, recipient `availableBalance` credited; status `APPROVED`) or rejects (sender `heldBalance` debited, sender `availableBalance` credited / refunded; status `REJECTED`).
 4. **Scope Boundary:** This is an internal ledger escrow simulation, not a multi-currency or commercial banking clearinghouse.
@@ -299,6 +300,9 @@ When a transaction is classified as `CUSTOMER_VERIFICATION_REQUIRED` (or escalat
 6. **Defense in Depth for Financial Data:** Atomic balance checks and balance holds prevent race conditions and double-spending.
 7. **Client Privacy:** Administrative and fraud rule internals (e.g. specific point weights) are never exposed to end-customer API responses.
 8. **Immutable Audit Logging:** All sensitive security events (auth, transactions, manual reviews, AI invocations) must be logged permanently in an append-only collection.
+9. **Universal Mandatory Transaction PIN:** Every outgoing transfer (regardless of amount or risk tier) strictly requires 6-digit Transaction PIN authentication. Accounts lacking a configured PIN return `400 TRANSACTION_PIN_NOT_SET`. Invalid PIN submissions return `401 INVALID_PIN` with 3-attempt automated 15-minute lockouts. PIN recovery/reset is secured via account password re-authentication (`POST /api/auth/pin/reset`).
+10. **Idempotency & Replay Integrity:** `Idempotency-Key` headers guarantee that network retries return the cached transaction response, while reusing the same key with an altered payload returns `409 IDEMPOTENCY_KEY_PAYLOAD_MISMATCH`.
+11. **Environment-Driven Dev Admin Provisioning:** Development setups automatically provision a designated administrator account via env-configured credentials to streamline local manual and automated security testing.
 
 ---
 
@@ -478,4 +482,79 @@ If future requirements evolve or conflict with this context document:
    - Scenario 1: ₹2,000, Known device, Known beneficiary -> LOW, APPROVED
    - Scenario 2: ₹15,000, New device (with additional risk factor) -> MEDIUM, CUSTOMER_VERIFICATION_REQUIRED (Customer self-verification: "Confirm Payment" -> re-evaluated and APPROVED, or "I Didn't Initiate This" -> FLAGGED_FOR_REVIEW escalated to Admin Review)
    - Scenario 3: ₹60,000, New device, New beneficiary -> HIGH, BLOCKED
+
+---
+
+## 22. Enterprise Hardening & Roadmap v2.0 Architecture (11 Implemented Features)
+
+The FraudShield core has been upgraded with 11 production-grade financial correctness, fraud intelligence, and SOC management capabilities:
+
+### 22.1 MongoDB ACID Transactions (`backend/src/utils/transactionHelper.js`)
+- All multi-document financial ledger operations execute inside atomic sessions (`mongoose.startSession()`).
+- Operations wrapped: Instant transfers, escrow hold allocations, escrow release, escrow refund, dispute refunds.
+- Automatically falls back to sequential execution when operating on standalone MongoDB instances (e.g. dev/test without replica sets).
+
+### 22.2 API Idempotency Engine (`backend/src/middleware/idempotency.js`, `backend/src/models/IdempotencyKey.js`)
+- Enforces the `Idempotency-Key` HTTP header on `/api/transactions` and `/api/transactions/:id/confirm`.
+- Computes SHA-256 fingerprint of request body + user ID + endpoint.
+- Three states: `IN_PROGRESS` (with 120s timeout detection), `COMPLETED` (cached HTTP status & response replay), and payload mismatch detection (`409 IDEMPOTENCY_KEY_PAYLOAD_MISMATCH`).
+- 24-hour TTL with MongoDB TTL indexes.
+
+### 22.3 Concurrency Protection & Atomic State Transitions (CAS)
+- Atomic Compare-And-Set (`findOneAndUpdate({ _id, status: EXPECTED })`) applied across:
+  - Transaction settlement (`CUSTOMER_VERIFICATION_REQUIRED` -> `PENDING`)
+  - Admin review resolution (`FLAGGED_FOR_REVIEW` -> `APPROVED` / `REJECTED`)
+  - SOC Case claiming (`UNASSIGNED` -> `CLAIMED`)
+  - Dispute resolution (`OPEN` / `UNDER_REVIEW` -> `RESOLVED_REFUNDED` / `RESOLVED_REJECTED`)
+- Prevents double-spend, double-refund, and dual-analyst collision races.
+
+### 22.4 Cold-Start Fraud Protection (`backend/src/fraud/rules/amountRule.js`)
+- Protects against new accounts (< 3 completed transactions) attempting high-value transfers.
+- If transaction amount exceeds ₹50,000 with insufficient baseline history, triggers `RULE_AMT_EXTREME` (+35 points) deterministically.
+- Smoothly transitions to 30-day rolling behavioral mean & standard deviation once history $\ge 3$ transactions.
+
+### 22.5 Pre-Controller Joi Validation Middleware (`backend/src/validators/joiSchemas.js`, `backend/src/middleware/validate.js`)
+- Applied to all mutation routes before controllers execute (`validateBody(schema)`).
+- Standardized 400 error responses (`VALIDATION_ERROR` with formatted detail list).
+- Strict sanitization on auth, payments, disputes, reviews, devices, and PIN updates.
+
+### 22.6 Explainable Risk Attribution Waterfall (`backend/src/fraud/riskCalculator.js`)
+- Every fraud decision outputs an explainability waterfall breakdown:
+  - `baseScore: 0`
+  - `ruleContributions`: Array of triggered rules with points, observed value, baseline comparison, and human explanation.
+  - `rawScore`: Uncapped sum of triggered penalty points.
+  - `cappedScore`: Normalization $\min(\text{rawScore}, 100)$.
+  - `mitigatingSignals`: Clean signals (e.g. recognized device, seasoned beneficiary, low velocity).
+- Admin UI features dedicated interactive waterfall graph and metric comparison pills.
+
+### 22.7 Attack-Chain Forensic Timeline (`backend/src/services/timelineService.js`, `/api/admin/reviews/:id/timeline`)
+- Aggregates cross-entity chronologically ordered events for suspicious transactions:
+  - User authentication & failed attempt bursts
+  - Device registration / new device access
+  - Beneficiary additions
+  - Payment creation & deterministic fraud evaluation
+  - Escalations, SOC case claims, notes, and resolution actions
+- Frontend displays vertical investigative attack chain with severity badges and telemetry metadata.
+
+### 22.8 SOC Case Management Lifecycle (`backend/src/models/AdminReview.js`, `/api/admin/reviews/:id/*`)
+- Enforces 4-stage operational lifecycle: `UNASSIGNED` -> `CLAIMED` -> `UNDER_INVESTIGATION` -> `RESOLVED`.
+- Atomic claiming (`POST /claim`) locks the review to an analyst.
+- Analysts can append persistent internal investigation notes (`POST /notes`).
+- Final resolution (`POST /resolve`) requires $\ge 10$-character audit rationale note.
+
+### 22.9 Reversible Escrow & Dispute Resolution (`backend/src/services/disputeService.js`)
+- Full customer-to-customer dispute workflow for settled transactions.
+- Recipient response capability with evidence submission.
+- Admin dispute resolution atomically debits recipient available balance and refunds requester, or rejects dispute with reason.
+
+### 22.10 Cryptographic Tamper-Evident Audit Ledger (`backend/src/models/AuditLog.js`, `backend/src/services/auditService.js`)
+- Sequential SHA-256 hash chaining: Each audit log stores `previousHash` and computes `currentHash = sha256(index + timestamp + action + actor + previousHash + details)`.
+- Genesis entry initialized on empty collection (`previousHash = "0".repeat(64)`).
+- Verification endpoint (`GET /api/admin/audit-logs/verify`) recalculates sequential hashes across all logs to prove ledger immutability and report tamper points.
+
+### 22.11 Customer Device Management & 6-Digit Step-Up PIN (`backend/src/models/User.js`, `backend/src/routes/authRoutes.js`, `backend/src/routes/deviceRoutes.js`)
+- Customers can view registered trusted devices, rename friendly names, and revoke compromised devices (`DELETE /api/devices/:id`).
+- Optional 6-digit transaction PIN stored with bcrypt hashing (`POST /api/auth/pin`).
+- Step-up challenge enforced during medium-risk confirmation (`x-transaction-pin` header).
+
 

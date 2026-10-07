@@ -15,7 +15,8 @@ import {
   Menu,
   X,
   PlusCircle,
-  Clock
+  Clock,
+  Scale
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useAlerts } from '../context/AlertContext';
@@ -44,6 +45,7 @@ const CustomerLayout = () => {
     { to: '/send-money', label: 'Send Money', icon: Send },
     { to: '/beneficiaries', label: 'Beneficiaries', icon: Users },
     { to: '/transactions', label: 'Transactions', icon: History },
+    { to: '/disputes', label: 'Disputes & Claims', icon: Scale },
     {
       to: '/alerts',
       label: 'Security Alerts',

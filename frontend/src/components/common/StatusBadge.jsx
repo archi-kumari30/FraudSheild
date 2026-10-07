@@ -43,6 +43,39 @@ const StatusBadge = ({ status }) => {
         </span>
       );
 
+    case 'REFUNDED':
+    case 'RESOLVED_REFUNDED':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-[#EBF3FA] text-[#1E3A5F] border border-[#BFD4E8]">
+          <CheckCircle2 className="w-3.5 h-3.5 text-[#2A527A]" />
+          <span>Refunded</span>
+        </span>
+      );
+
+    case 'OPEN':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-[#FFF7ED] text-[#9A3412] border border-[#FFEDD5]">
+          <AlertTriangle className="w-3.5 h-3.5 text-[#EA580C]" />
+          <span>Open Dispute</span>
+        </span>
+      );
+
+    case 'RECIPIENT_RESPONDED':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-[#EFF6FF] text-[#1E40AF] border border-[#DBEAFE]">
+          <CheckCircle2 className="w-3.5 h-3.5 text-[#2563EB]" />
+          <span>Recipient Responded</span>
+        </span>
+      );
+
+    case 'DISPUTED':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]">
+          <AlertTriangle className="w-3.5 h-3.5 text-[#D97706]" />
+          <span>Disputed</span>
+        </span>
+      );
+
     case 'PENDING':
     default:
       return (

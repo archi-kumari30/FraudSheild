@@ -15,6 +15,12 @@ const seedAdmin = async (shouldDisconnect = (require.main === module)) => {
       return existingAdmin;
     }
 
+    if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_ADMIN_SEED_IN_PRODUCTION) {
+      console.warn('[SEED GUARD] Auto-seeding default admin in production is disallowed for security.');
+      if (shouldDisconnect) await disconnectDB();
+      return null;
+    }
+
     const passwordHash = await User.hashPassword(config.adminSeed.password);
 
     const adminUser = new User({
@@ -27,6 +33,7 @@ const seedAdmin = async (shouldDisconnect = (require.main === module)) => {
 
     await adminUser.save();
     console.log(`[SEED] Admin account provisioned successfully: ${adminEmail}`);
+    console.log(`[SEED] Login via web interface: ${adminEmail} / [configured ADMIN_PASSWORD]`);
 
     if (shouldDisconnect) await disconnectDB();
     return adminUser;

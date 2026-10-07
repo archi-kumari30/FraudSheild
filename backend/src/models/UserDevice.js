@@ -14,6 +14,12 @@ const userDeviceSchema = new mongoose.Schema(
       trim: true,
       index: true
     },
+    deviceLabel: {
+      type: String,
+      default: 'Web Browser Device',
+      trim: true,
+      maxlength: 100
+    },
     userAgent: {
       type: String,
       default: 'unknown'
@@ -21,6 +27,23 @@ const userDeviceSchema = new mongoose.Schema(
     ipAddress: {
       type: String,
       default: 'unknown'
+    },
+    isTrusted: {
+      type: Boolean,
+      default: true
+    },
+    isRevoked: {
+      type: Boolean,
+      default: false,
+      index: true
+    },
+    revokedAt: {
+      type: Date,
+      default: null
+    },
+    revokedByIp: {
+      type: String,
+      default: null
     },
     firstSeenAt: {
       type: Date,

@@ -25,8 +25,13 @@ import {
 import axiosClient from '../../api/axiosClient';
 import StatusBadge from '../../components/common/StatusBadge';
 import ResolveCaseModal from '../../components/admin/ResolveCaseModal';
+import CaseManagementBar from '../../components/admin/CaseManagementBar';
+import RiskAttributionWaterfall from '../../components/admin/RiskAttributionWaterfall';
+import ForensicTimeline from '../../components/admin/ForensicTimeline';
+import { useAuth } from '../../context/AuthContext';
 
 const TransactionInvestigationPage = () => {
+  const { user } = useAuth();
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -231,6 +236,14 @@ const TransactionInvestigationPage = () => {
         </div>
       )}
 
+      {/* SOC Case Management Bar */}
+      <CaseManagementBar
+        transaction={transaction}
+        currentUserId={user?._id || user?.id}
+        onCaseUpdated={(updated) => setTransaction(updated)}
+        onOpenResolveModal={() => setIsResolveModalOpen(true)}
+      />
+
       {/* Primary Key Metrics Banner */}
       <div
         className={`p-6 rounded-2xl border shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6 ${
@@ -300,64 +313,11 @@ const TransactionInvestigationPage = () => {
         </div>
       </div>
 
-      {/* Triggered Rule Breakdown Card (Section 13 Requirement) */}
-      <div className="bg-[#FAFCFA] rounded-2xl p-6 border border-[#D4E2DC] shadow-xs space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-[#D4E2DC]">
-          <div>
-            <h3 className="text-base font-semibold text-[#17211D]">
-              Deterministic Rule Breakdown
-            </h3>
-            <p className="text-xs text-[#5A6E65] mt-0.5">
-              Individual score contributions that formulated this transaction's composite score
-            </p>
-          </div>
-          <span className="text-xs font-mono font-bold text-[#285C4D] bg-[#EAF3EF] px-2.5 py-1 rounded-lg border border-[#D4E2DC]">
-            {transaction.triggeredRules?.length || 0} Rules Triggered
-          </span>
-        </div>
+      {/* Explainable Risk Attribution Waterfall */}
+      <RiskAttributionWaterfall transaction={transaction} />
 
-        {transaction.triggeredRules && transaction.triggeredRules.length > 0 ? (
-          <div className="space-y-3">
-            <div className="divide-y divide-[#E4ECE8]">
-              {transaction.triggeredRules.map((rule, idx) => (
-                <div key={idx} className="py-3 flex items-start justify-between gap-4">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-[#285C4D]">
-                        {rule.ruleCode}
-                      </span>
-                    </div>
-                    <p className="text-xs text-[#17211D] font-medium leading-relaxed">
-                      {rule.reason}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <span className="inline-block px-2.5 py-1 rounded-lg font-mono font-bold text-xs bg-[#FBF0EF] text-[#8C3E3A] border border-[#F2D6D3]">
-                      +{rule.weight}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Total Math Breakdown Bar */}
-            <div className="pt-3 border-t border-[#D4E2DC] flex items-center justify-between text-xs font-bold bg-[#F4F8F5] p-3 rounded-xl">
-              <span className="text-[#5A6E65] uppercase tracking-wider">
-                Cumulative Evaluation Total
-              </span>
-              <span className="text-[#17211D] font-mono text-sm">
-                Score: {transaction.riskScore} / 100
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div className="py-8 text-center text-xs text-[#5A6E65]">
-            <CheckCircle2 className="w-8 h-8 text-[#285C4D] mx-auto mb-2" />
-            <p className="font-semibold text-[#17211D]">Zero Rules Triggered</p>
-            <p>This transaction passed all 6 security heuristics with a 0/100 risk score.</p>
-          </div>
-        )}
-      </div>
+      {/* Attack-Chain Forensic Timeline */}
+      <ForensicTimeline transactionId={id} />
 
       {/* Behavioral Amount Analysis Card */}
       {(() => {
@@ -521,9 +481,20 @@ const TransactionInvestigationPage = () => {
 
         {/* Device Telemetry Card */}
         <div className="bg-[#FAFCFA] rounded-2xl p-5 border border-[#D4E2DC] shadow-xs space-y-3">
-          <div className="flex items-center gap-2 text-xs font-bold text-[#17211D] uppercase tracking-wider pb-2 border-b border-[#D4E2DC]">
-            <Monitor className="w-4 h-4 text-[#285C4D]" />
-            <span>Device Metadata</span>
+          <div className="flex items-center justify-between pb-2 border-b border-[#D4E2DC]">
+            <div className="flex items-center gap-2 text-xs font-bold text-[#17211D] uppercase tracking-wider">
+              <Monitor className="w-4 h-4 text-[#285C4D]" />
+              <span>Device & Telemetry Context</span>
+            </div>
+            {transaction.deviceContext?.isKnownDevice ? (
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-[#EAF3EF] text-[#285C4D] border border-[#C8DCD2]">
+                Known Device
+              </span>
+            ) : (
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-[#FAF4EB] text-[#946625] border border-[#EAD7BA]">
+                Unrecognized Device
+              </span>
+            )}
           </div>
 
           <div className="space-y-2 text-xs">
@@ -533,13 +504,26 @@ const TransactionInvestigationPage = () => {
                 {transaction.deviceContext?.deviceId || 'Unknown'}
               </span>
             </div>
-            <div>
-              <span className="text-[#5A6E65] block">Originating IP Address</span>
-              <span className="font-mono text-[#17211D]">
-                {transaction.deviceContext?.ipAddress || 'Unknown'}
-              </span>
+            <div className="flex items-center justify-between pt-1">
+              <div>
+                <span className="text-[#5A6E65] block">Originating IP Address</span>
+                <span className="font-mono text-[#17211D]">
+                  {transaction.deviceContext?.ipAddress || 'Unknown'}
+                </span>
+              </div>
+              <div>
+                {transaction.deviceContext?.isKnownIp ? (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-[#EAF3EF] text-[#285C4D]">
+                    Recognized IP
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-[#FAF4EB] text-[#946625]">
+                    New IP
+                  </span>
+                )}
+              </div>
             </div>
-            <div>
+            <div className="pt-1">
               <span className="text-[#5A6E65] block">User Agent</span>
               <span
                 className="font-mono text-[10px] text-[#5A6E65] block truncate"

@@ -15,12 +15,15 @@ import {
   UserCheck,
   Users,
   Wallet,
-  Send
+  Send,
+  KeyRound
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAlerts } from '../../context/AlertContext';
 import axiosClient from '../../api/axiosClient';
 import StatusBadge from '../../components/common/StatusBadge';
+import TransactionPinModal from '../../components/customer/TransactionPinModal';
+import DeviceManagerCard from '../../components/customer/DeviceManagerCard';
 
 const SecurityPage = () => {
   const { user, wallet } = useAuth();
@@ -29,18 +32,25 @@ const SecurityPage = () => {
 
   const [devices, setDevices] = useState([]);
   const [suspiciousTxs, setSuspiciousTxs] = useState([]);
+  const [pinStatus, setPinStatus] = useState({ hasPinSet: false, isLocked: false });
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadSecurityData = useCallback(async () => {
     try {
-      const [devRes, txRes] = await Promise.all([
-        axiosClient.get('/devices'),
-        axiosClient.get('/transactions')
+      const [devRes, txRes, pinRes] = await Promise.all([
+        axiosClient.get('/devices').catch(() => ({ success: false })),
+        axiosClient.get('/transactions').catch(() => ({ success: false })),
+        axiosClient.get('/auth/pin/status').catch(() => ({ success: false }))
       ]);
 
       if (devRes.success && Array.isArray(devRes.data?.devices)) {
         setDevices(devRes.data.devices);
+      }
+
+      if (pinRes.success && pinRes.data) {
+        setPinStatus(pinRes.data);
       }
 
       if (txRes.success && Array.isArray(txRes.data?.transactions)) {
@@ -223,54 +233,52 @@ const SecurityPage = () => {
             </div>
           </div>
 
-          {/* Recognized Devices (Rule 3 Protection) */}
+          {/* Step-Up Transaction PIN Card */}
           <div className="bg-[#FAFCFA] rounded-xl p-5 border border-[#D4E2DC] shadow-subtle space-y-3">
             <div className="flex items-center justify-between pb-3 border-b border-[#D4E2DC]">
               <div className="flex items-center gap-2">
-                <Smartphone className="w-4 h-4 text-[#285C4D]" />
+                <KeyRound className="w-4 h-4 text-[#285C4D]" />
                 <h2 className="text-xs font-bold text-[#17211D] uppercase tracking-wider">
-                  Recognized Devices ({devices.length})
+                  Transaction PIN
                 </h2>
               </div>
-              <span className="text-[10px] font-semibold text-[#285C4D]">
-                Rule 3 Protected
-              </span>
+              {pinStatus.hasPinSet ? (
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#EAF3EF] text-[#285C4D] border border-[#C8DCD2]">
+                  Configured
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#FAF4EB] text-[#946625] border border-[#EAD7BA]">
+                  Not Set
+                </span>
+              )}
             </div>
 
             <p className="text-[11px] text-[#5A6E65] leading-relaxed">
-              Transactions from unknown devices receive a <strong className="text-[#17211D]">+25 risk penalty</strong> to halt account takeover.
+              A 6-digit bcrypt-hashed PIN required for step-up verification when high-risk or unusual transactions occur.
             </p>
 
-            {loading ? (
-              <div className="py-4 text-center text-xs text-[#5A6E65]">Loading recognized devices...</div>
-            ) : devices.length === 0 ? (
-              <div className="py-4 text-center text-xs text-[#5A6E65] bg-[#F4F8F5] rounded-lg p-3">
-                No previous devices recorded yet. Your current device will register on your first approved transfer.
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                {devices.map((dev) => (
-                  <div
-                    key={dev._id || dev.deviceId}
-                    className="p-3 rounded-lg bg-[#F4F8F5] border border-[#D4E2DC] text-xs space-y-1"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-bold text-[11px] text-[#17211D] truncate max-w-[150px]">
-                        {dev.deviceId}
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#EAF3EF] text-[#285C4D]">
-                        Trusted
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-[#5A6E65] flex items-center justify-between">
-                      <span>IP: {dev.ipAddress || 'Internal'}</span>
-                      <span>{dev.lastSeenAt ? new Date(dev.lastSeenAt).toLocaleDateString() : 'Active'}</span>
-                    </div>
-                  </div>
-                ))}
+            {pinStatus.isLocked && (
+              <div className="p-2.5 rounded-lg bg-[#FBF0EF] border border-[#E6BFBD] text-xs text-[#8C3E3A]">
+                PIN is temporarily locked due to 3 consecutive failed attempts.
               </div>
             )}
+
+            <button
+              type="button"
+              onClick={() => setIsPinModalOpen(true)}
+              className="w-full py-2 px-3 rounded-lg text-xs font-bold bg-white border border-[#D4E2DC] text-[#285C4D] hover:bg-[#F4F8F5] transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>{pinStatus.hasPinSet ? 'Change Transaction PIN' : 'Set Up 6-Digit PIN'}</span>
+            </button>
           </div>
+
+          {/* Recognized Devices Card */}
+          <DeviceManagerCard
+            devices={devices}
+            onDeviceUpdated={loadSecurityData}
+            currentDeviceId={currentDeviceId}
+          />
         </div>
 
         {/* Right Column: Security Alerts & Suspicious Activity */}
@@ -483,6 +491,14 @@ const SecurityPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Transaction PIN Setup / Change Modal */}
+      <TransactionPinModal
+        isOpen={isPinModalOpen}
+        onClose={() => setIsPinModalOpen(false)}
+        onPinConfigured={loadSecurityData}
+        hasExistingPin={pinStatus.hasPinSet}
+      />
     </div>
   );
 };

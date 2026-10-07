@@ -10,7 +10,7 @@
  * Reason Code: RULE_DORMANT_SPIKE
  */
 const dormantAccountRule = (transactionData, context = {}) => {
-  const { amount } = transactionData;
+  const amount = Number(transactionData?.amount) || 0;
   const daysSinceLastActivity = context.daysSinceLastActivity ?? 0;
   const isDormant = context.isDormant ?? (daysSinceLastActivity >= 30);
   const historyAvg = Number(context.historyAvg) || 0;
@@ -27,7 +27,12 @@ const dormantAccountRule = (transactionData, context = {}) => {
       triggered: true,
       ruleCode: 'RULE_DORMANT_SPIKE',
       weight: 25,
-      reason: `Transfer of ₹${amount} (${detail}) from account dormant for ${daysSinceLastActivity} days (threshold >= 30 days)`
+      reason: `Transfer of ₹${amount.toLocaleString('en-IN')} (${detail}) from account dormant for ${daysSinceLastActivity} days (threshold >= 30 days)`,
+      metric: 'Account Dormancy & Spike',
+      observedValue: `${daysSinceLastActivity} days dormant, ₹${amount.toLocaleString('en-IN')}`,
+      baselineValue: '< 30 days dormant or amount within baseline',
+      deviation: 'Sudden reactivation with large transfer',
+      severity: 'HIGH'
     };
   }
 
@@ -35,7 +40,12 @@ const dormantAccountRule = (transactionData, context = {}) => {
     triggered: false,
     ruleCode: 'RULE_DORMANT_SPIKE',
     weight: 0,
-    reason: null
+    reason: null,
+    metric: 'Account Dormancy',
+    observedValue: isDormant ? `${daysSinceLastActivity} days dormant (small transfer)` : 'Active account',
+    baselineValue: '< 30 days inactivity',
+    deviation: 'Normal account activity',
+    severity: 'LOW'
   };
 };
 

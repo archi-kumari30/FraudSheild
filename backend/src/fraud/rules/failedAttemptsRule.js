@@ -14,7 +14,12 @@ const failedAttemptsRule = (transactionData, context = {}) => {
       triggered: true,
       ruleCode: 'RULE_FAIL_BURST',
       weight: 20,
-      reason: `Burst of failed transactions detected (${recentFailedCount} failed attempts in last 15 minutes, threshold >= 3)`
+      reason: `Burst of failed transactions detected (${recentFailedCount} failed attempts in last 15 minutes, threshold >= 3)`,
+      metric: 'Failed Attempts Burst',
+      observedValue: `${recentFailedCount} failed attempts in 15m`,
+      baselineValue: '< 3 failed attempts in 15m',
+      deviation: 'Rapid failure burst pattern',
+      severity: 'MEDIUM'
     };
   }
 
@@ -22,7 +27,12 @@ const failedAttemptsRule = (transactionData, context = {}) => {
     triggered: false,
     ruleCode: 'RULE_FAIL_BURST',
     weight: 0,
-    reason: null
+    reason: null,
+    metric: 'Failed Attempts Burst',
+    observedValue: `${recentFailedCount} failed attempts in 15m`,
+    baselineValue: '< 3 failed attempts in 15m',
+    deviation: 'Normal failure count',
+    severity: 'LOW'
   };
 };
 

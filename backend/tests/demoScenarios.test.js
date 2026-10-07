@@ -22,11 +22,14 @@ describe('Definition of Done Demo Scenarios & Rebuild Verification', () => {
     await Alert.deleteMany({});
     await UserDevice.deleteMany({});
 
-    // Seed Sender User
+    const pinHash = await User.hashPin('123456');
+
+    // Seed Sender User with configured Transaction PIN
     senderUser = await User.create({
       name: 'Alice Sender',
       email: 'alice.sender@example.com',
       passwordHash: '$2a$10$wT0XlTfHh/2Yh.gJ3Y3BPe6vR.uE9mG8uH3q5tY9y.w6w9v1q.wqu',
+      transactionPinHash: pinHash,
       role: 'customer'
     });
     senderToken = generateToken(senderUser);
@@ -78,7 +81,7 @@ describe('Definition of Done Demo Scenarios & Rebuild Verification', () => {
   describe('Demo Scenario 1: Low Risk -> APPROVED', () => {
     it('₹2,000 transfer with known device and known beneficiary executes immediately with score 0 (LOW, APPROVED)', async () => {
       // Create established beneficiary (added 48 hours ago)
-      const establishedBeneficiary = await Beneficiary.create({
+      await Beneficiary.create({
         userId: senderUser._id,
         recipientAccountId: recipientUser._id,
         nickname: 'Bob Established',
@@ -92,7 +95,8 @@ describe('Definition of Done Demo Scenarios & Rebuild Verification', () => {
         .send({
           recipientId: recipientUser._id.toString(),
           amount: 2000,
-          note: 'Dinner split'
+          note: 'Dinner split',
+          transactionPin: '123456'
         });
 
       expect(res.status).toBe(200);
@@ -129,7 +133,8 @@ describe('Definition of Done Demo Scenarios & Rebuild Verification', () => {
         .send({
           recipientId: recipientUser._id.toString(),
           amount: 15000,
-          note: 'Project consultation fee'
+          note: 'Project consultation fee',
+          transactionPin: '123456'
         });
 
       expect(res.status).toBe(202);
@@ -160,7 +165,7 @@ describe('Definition of Done Demo Scenarios & Rebuild Verification', () => {
       const confirmRes = await request(app)
         .post(`/api/transactions/${txId}/confirm`)
         .set('Authorization', `Bearer ${senderToken}`)
-        .send();
+        .send({ transactionPin: '123456' });
 
       expect(confirmRes.status).toBe(200);
       expect(confirmRes.body.data.status).toBe('APPROVED');
@@ -188,7 +193,8 @@ describe('Definition of Done Demo Scenarios & Rebuild Verification', () => {
         .set('x-device-id', newDeviceId)
         .send({
           recipientId: recipientUser._id.toString(),
-          amount: 15000
+          amount: 15000,
+          transactionPin: '123456'
         });
 
       expect(res.status).toBe(202);
@@ -270,7 +276,8 @@ describe('Definition of Done Demo Scenarios & Rebuild Verification', () => {
         .send({
           recipientId: recipientUser._id.toString(),
           amount: 60000,
-          note: 'Urgent wire transfer'
+          note: 'Urgent wire transfer',
+          transactionPin: '123456'
         });
 
       expect([400, 403]).toContain(res.status);

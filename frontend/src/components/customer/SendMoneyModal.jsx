@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Send, CheckCircle2, AlertTriangle, ShieldAlert, Loader2, ArrowRight } from 'lucide-react';
+import { Send, CheckCircle2, AlertTriangle, ShieldAlert, Loader2, ArrowRight, Lock, XCircle } from 'lucide-react';
 import Modal from '../common/Modal';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../context/AuthContext';
@@ -16,11 +16,15 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
 
+  const [transactionPin, setTransactionPin] = useState('');
+  const [pinStatus, setPinStatus] = useState({ hasPinSet: false, checked: false });
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [outcome, setOutcome] = useState(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationError, setVerificationError] = useState('');
+  const [pinInput, setPinInput] = useState('');
 
   // Load beneficiaries for quick selection
   useEffect(() => {
@@ -56,14 +60,33 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
     }
   }, [isOpen, initialRecipient]);
 
+  // Load PIN status
+  useEffect(() => {
+    if (isOpen) {
+      axiosClient
+        .get('/auth/pin/status')
+        .then((res) => {
+          if (res.success && res.data) {
+            setPinStatus({
+              hasPinSet: Boolean(res.data.hasPinSet),
+              checked: true
+            });
+          }
+        })
+        .catch(() => setPinStatus({ hasPinSet: false, checked: true }));
+    }
+  }, [isOpen]);
+
   const resetForm = () => {
     setAmount('');
     setNote('');
+    setTransactionPin('');
     setFormError('');
     setOutcome(null);
     setIsSubmitting(false);
     setIsVerifying(false);
     setVerificationError('');
+    setPinInput('');
   };
 
   const handleClose = () => {
@@ -72,12 +95,43 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
     onClose();
   };
 
+  const handleDeclinePayment = async (txId) => {
+    if (!txId) return;
+    setIsVerifying(true);
+    setVerificationError('');
+    try {
+      const res = await axiosClient.post(`/transactions/${txId}/decline`, {
+        reason: 'Declined by customer from review screen'
+      });
+      if (res.success && res.data) {
+        setOutcome((prev) => ({
+          ...prev,
+          status: 'REJECTED',
+          transaction: res.data.transaction,
+          message: 'Payment declined. Held escrow funds have been restored to your available balance.'
+        }));
+        await refreshWallet();
+        await fetchAlerts();
+        if (onSuccess) onSuccess();
+      }
+    } catch (err) {
+      setVerificationError(err.message || 'Failed to decline transaction.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   const handleConfirmPayment = async () => {
     if (!outcome?.transaction?._id) return;
     setIsVerifying(true);
     setVerificationError('');
     try {
-      const res = await axiosClient.post(`/transactions/${outcome.transaction._id}/confirm`);
+      const confirmPayload = {};
+      if (pinInput.trim()) {
+        confirmPayload.transactionPin = pinInput.trim();
+      }
+
+      const res = await axiosClient.post(`/transactions/${outcome.transaction._id}/confirm`, confirmPayload);
       if (res.success && res.data) {
         setOutcome((prev) => ({
           ...prev,
@@ -98,7 +152,7 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
         await refreshWallet();
         await fetchAlerts();
       } else {
-        setVerificationError(err.message || 'Verification failed. Please try again.');
+        setVerificationError(err.message || 'Verification failed. Please check your transaction PIN.');
       }
     } finally {
       setIsVerifying(false);
@@ -110,6 +164,16 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
     setFormError('');
 
     if (isSubmitting) return;
+
+    if (!pinStatus.hasPinSet) {
+      setFormError('Transaction PIN is not configured. Please set up your 6-digit PIN in Security Settings before sending money.');
+      return;
+    }
+
+    if (!transactionPin || transactionPin.length !== 6) {
+      setFormError('Please enter your 6-digit Transaction PIN to authorize this transfer.');
+      return;
+    }
 
     const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
@@ -140,11 +204,25 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
     setIsSubmitting(true);
 
     try {
-      const res = await axiosClient.post('/transactions', {
-        recipientId: targetRecipientId,
-        amount: numericAmount,
-        note: note.trim()
-      });
+      const idempotencyKey = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `idem_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+      const res = await axiosClient.post(
+        '/transactions',
+        {
+          recipientId: targetRecipientId,
+          amount: numericAmount,
+          note: note.trim(),
+          transactionPin: transactionPin.trim()
+        },
+        {
+          headers: {
+            'Idempotency-Key': idempotencyKey,
+            'x-transaction-pin': transactionPin.trim()
+          }
+        }
+      );
 
       const txStatus = res.data?.status || res.data?.transaction?.status || 'APPROVED';
       const txData = res.data?.transaction || {};
@@ -219,7 +297,29 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
                 </div>
               )}
 
-              <div className="pt-2 flex justify-center">
+              <div className="space-y-1.5 pt-1 text-left">
+                <label className="text-[11px] font-semibold text-[#17211D] block text-center">
+                  Enter 6-Digit Transaction PIN (if configured)
+                </label>
+                <input
+                  type="password"
+                  maxLength={6}
+                  value={pinInput}
+                  onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
+                  placeholder="••••••"
+                  className="w-40 mx-auto block px-3 py-2 rounded-xl bg-white border border-[#D4E2DC] text-center font-mono text-base tracking-widest text-[#17211D] focus:outline-none focus:border-[#285C4D]"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleDeclinePayment(outcome.transaction?._id)}
+                  disabled={isVerifying}
+                  className="px-4 py-2.5 rounded-lg border border-[#E6BFBD] bg-white text-[#8C3E3A] hover:bg-[#FBF0EF] font-medium text-xs transition-colors disabled:opacity-50"
+                >
+                  Decline & Refund
+                </button>
                 <button
                   type="button"
                   onClick={handleConfirmPayment}
@@ -235,6 +335,18 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
                     <span>Confirm Payment</span>
                   )}
                 </button>
+              </div>
+            </div>
+          )}
+
+          {outcome.status === 'REJECTED' && (
+            <div className="space-y-3">
+              <div className="w-14 h-14 rounded-2xl bg-[#FBF0EF] border border-[#E6BFBD] text-[#8C3E3A] flex items-center justify-center mx-auto">
+                <XCircle className="w-8 h-8" />
+              </div>
+              <h4 className="text-lg font-bold text-[#8C3E3A]">Payment Declined</h4>
+              <div className="bg-[#FBF0EF] border border-[#E6BFBD] rounded-xl p-3.5 text-left text-xs text-[#8C3E3A] leading-relaxed">
+                {outcome.message || 'Payment has been declined. Held escrow funds have been returned to your available balance.'}
               </div>
             </div>
           )}
@@ -398,6 +510,40 @@ const SendMoneyModal = ({ isOpen, onClose, initialRecipient = null, onSuccess })
               disabled={isSubmitting}
               className="w-full px-3.5 py-2 rounded-lg bg-[#FAFCFA] border border-[#D4E2DC] text-[#17211D] placeholder-[#5A6E65]/50 focus:border-[#285C4D] focus:ring-1 focus:ring-[#285C4D] text-sm"
             />
+          </div>
+
+          {/* Transaction PIN Authorization */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-[#17211D] flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-[#285C4D]" />
+                Transaction PIN (Mandatory)
+              </label>
+              <span className="text-[11px] text-[#5A6E65]">6-digit authorization PIN</span>
+            </div>
+
+            {!pinStatus.hasPinSet && pinStatus.checked ? (
+              <div className="p-3 rounded-xl bg-[#FAF4EB] border border-[#EAD7BA] text-xs text-[#946625] flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-[#C89445] shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-semibold text-[#17211D]">Transaction PIN Not Configured</p>
+                  <p className="text-[#5A6E65]">
+                    For security, all payments require a 6-digit Transaction PIN. Please set it up in Security Settings before making transfers.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <input
+                type="password"
+                maxLength={6}
+                value={transactionPin}
+                onChange={(e) => setTransactionPin(e.target.value.replace(/\D/g, ''))}
+                placeholder="••••••"
+                disabled={isSubmitting}
+                className="w-full px-3.5 py-2.5 rounded-lg bg-[#FAFCFA] border border-[#D4E2DC] text-[#17211D] text-center font-mono text-base tracking-widest placeholder-[#5A6E65]/40 focus:border-[#285C4D] focus:ring-1 focus:ring-[#285C4D]"
+                required
+              />
+            )}
           </div>
 
           {/* Submit Actions */}

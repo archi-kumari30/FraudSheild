@@ -7,7 +7,8 @@ const { successResponse, errorResponse } = require('../utils/apiResponse');
  */
 const createTransaction = async (req, res, next) => {
   try {
-    const { recipientId, amount, note } = req.body;
+    const { recipientId, amount, note, transactionPin } = req.body;
+    const pin = transactionPin || req.headers['x-transaction-pin'];
 
     if (!recipientId) {
       return errorResponse(res, 400, 'Recipient ID is required', 'MISSING_RECIPIENT');
@@ -22,7 +23,8 @@ const createTransaction = async (req, res, next) => {
       recipientId,
       amount,
       note,
-      req.deviceContext
+      req.deviceContext,
+      pin
     );
 
     if (result.status === 'APPROVED') {
@@ -128,7 +130,8 @@ const confirmTransaction = async (req, res, next) => {
     const result = await transactionService.confirmTransaction(
       req.user._id,
       id,
-      req.deviceContext
+      req.deviceContext,
+      req.body || {}
     );
 
     return successResponse(res, 200, result.message, {
@@ -171,10 +174,40 @@ const escalateTransaction = async (req, res, next) => {
   }
 };
 
+/**
+ * Customer declines a medium-risk transaction held in escrow
+ * POST /api/transactions/:id/decline
+ */
+const declineTransaction = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+
+    const result = await transactionService.declineTransaction(
+      req.user._id,
+      id,
+      reason,
+      req.deviceContext
+    );
+
+    return successResponse(res, 200, result.message, {
+      status: result.status,
+      transaction: result.transaction
+    });
+  } catch (error) {
+    if (error.status) {
+      return errorResponse(res, error.status, error.message, error.code);
+    }
+    next(error);
+  }
+};
+
 module.exports = {
   createTransaction,
   getTransactions,
   getTransactionById,
   confirmTransaction,
-  escalateTransaction
+  escalateTransaction,
+  declineTransaction
 };
+

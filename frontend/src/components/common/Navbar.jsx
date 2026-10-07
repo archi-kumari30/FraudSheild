@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Shield, Wallet, Bell, LogOut, User, Users, History, AlertCircle } from 'lucide-react';
+import { Shield, Wallet, Bell, LogOut, User, Users, History, AlertCircle, Scale } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAlerts } from '../../context/AlertContext';
 import AlertDrawer from '../customer/AlertDrawer';
@@ -20,12 +20,14 @@ const Navbar = () => {
   const navLinks = isAdmin
     ? [
         { to: '/admin/reviews', label: 'Review Queue', icon: AlertCircle },
+        { to: '/admin/disputes', label: 'Disputes', icon: Scale },
         { to: '/admin/audit-logs', label: 'Audit Trail', icon: History }
       ]
     : [
         { to: '/dashboard', label: 'Overview', icon: Wallet },
         { to: '/beneficiaries', label: 'Beneficiaries', icon: Users },
-        { to: '/transactions', label: 'Transactions', icon: History }
+        { to: '/transactions', label: 'Transactions', icon: History },
+        { to: '/disputes', label: 'Disputes', icon: Scale }
       ];
 
   const formatINR = (val) => {

@@ -15,7 +15,9 @@ import {
   Plus,
   Clock,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  Lock,
+  XCircle
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../context/AuthContext';
@@ -41,6 +43,24 @@ const SendMoneyPage = () => {
   const [outcome, setOutcome] = useState(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationError, setVerificationError] = useState('');
+  const [transactionPin, setTransactionPin] = useState('');
+  const [pinStatus, setPinStatus] = useState({ hasPinSet: true, isLocked: false });
+
+  // Load PIN status
+  const loadPinStatus = async () => {
+    try {
+      const res = await axiosClient.get('/auth/pin/status');
+      if (res.success && res.data) {
+        setPinStatus(res.data);
+      }
+    } catch (err) {
+      console.warn('Could not load PIN status:', err.message);
+    }
+  };
+
+  useEffect(() => {
+    loadPinStatus();
+  }, []);
 
   // Quick Add Beneficiary inline modal
   const [isAddBenModalOpen, setIsAddBenModalOpen] = useState(false);
@@ -180,16 +200,41 @@ const SendMoneyPage = () => {
   const handleConfirmAndSend = async () => {
     if (isSubmitting) return;
     setFormError('');
+
+    if (!pinStatus.hasPinSet) {
+      setFormError('Transaction PIN is not configured. Please set up your 6-digit PIN in Security Settings before sending money.');
+      return;
+    }
+
+    if (!transactionPin || transactionPin.length !== 6) {
+      setFormError('Please enter your 6-digit Transaction PIN to authorize this transfer.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     let targetRecipientId = recipientMode === 'saved' ? selectedRecipientId : customRecipientInput.trim();
 
     try {
-      const res = await axiosClient.post('/transactions', {
-        recipientId: targetRecipientId,
-        amount: parseFloat(amount),
-        note: note.trim()
-      });
+      const idempotencyKey = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `idem_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+      const res = await axiosClient.post(
+        '/transactions',
+        {
+          recipientId: targetRecipientId,
+          amount: parseFloat(amount),
+          note: note.trim(),
+          transactionPin: transactionPin.trim()
+        },
+        {
+          headers: {
+            'Idempotency-Key': idempotencyKey,
+            'x-transaction-pin': transactionPin.trim()
+          }
+        }
+      );
 
       const txStatus = res.data?.status || res.data?.transaction?.status || 'APPROVED';
       const txData = res.data?.transaction || {};
@@ -236,7 +281,9 @@ const SendMoneyPage = () => {
     setIsVerifying(true);
     setVerificationError('');
     try {
-      const res = await axiosClient.post(`/transactions/${outcome.transaction._id}/confirm`);
+      const res = await axiosClient.post(`/transactions/${outcome.transaction._id}/confirm`, {
+        transactionPin: transactionPin.trim()
+      });
       if (res.success && res.data) {
         const updatedTx = res.data.transaction;
         const newStatus = res.data.status || updatedTx.status;
@@ -260,8 +307,33 @@ const SendMoneyPage = () => {
         await refreshWallet();
         await fetchAlerts();
       } else {
-        setVerificationError(err.message || 'Verification failed. Please try again.');
+        setVerificationError(err.message || 'Verification failed. Please check your transaction PIN.');
       }
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleDeclinePayment = async () => {
+    if (!outcome?.transaction?._id) return;
+    setIsVerifying(true);
+    setVerificationError('');
+    try {
+      const res = await axiosClient.post(`/transactions/${outcome.transaction._id}/decline`, {
+        reason: 'Customer declined medium-risk payment'
+      });
+      if (res.success && res.data) {
+        setOutcome((prev) => ({
+          ...prev,
+          status: 'REJECTED',
+          transaction: res.data.transaction,
+          message: 'Payment declined. Held escrow funds have been restored to your available balance.'
+        }));
+        await refreshWallet();
+        await fetchAlerts();
+      }
+    } catch (err) {
+      setVerificationError(err.message || 'Failed to decline transaction. Please try again.');
     } finally {
       setIsVerifying(false);
     }
@@ -664,6 +736,41 @@ const SendMoneyPage = () => {
             </span>
           </div>
 
+          {/* Mandatory Transaction PIN Requirement */}
+          <div className="p-4 rounded-xl bg-white border border-[#D4E2DC] space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-[#17211D] flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-[#285C4D]" />
+                <span>6-Digit Transaction PIN</span>
+              </label>
+              <Link to="/security" className="text-[11px] text-[#285C4D] hover:underline font-semibold">
+                {pinStatus.hasPinSet ? 'Forgot PIN?' : 'Configure in Security'}
+              </Link>
+            </div>
+            {!pinStatus.hasPinSet ? (
+              <div className="p-3 rounded-lg bg-[#FAF4EB] border border-[#EAD7BA] text-xs text-[#946625] flex items-center justify-between">
+                <span>Transaction PIN not set. Every payment requires an authorized 6-digit PIN.</span>
+                <Link to="/security" className="px-2.5 py-1 rounded bg-[#285C4D] text-white font-bold text-[11px] whitespace-nowrap ml-2">
+                  Set Up PIN
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <input
+                  type="password"
+                  maxLength={6}
+                  value={transactionPin}
+                  onChange={(e) => setTransactionPin(e.target.value.replace(/\D/g, ''))}
+                  placeholder="••••••"
+                  className="w-48 px-3 py-2 rounded-xl bg-[#EDF6F1] border border-[#D4E2DC] text-center font-mono text-lg tracking-widest text-[#17211D] focus:outline-none focus:border-[#285C4D]"
+                />
+                <span className="text-[11px] text-[#5A6E65] block">
+                  Mandatory authentication for all outgoing transfers. Server-side bcrypt verified.
+                </span>
+              </div>
+            )}
+          </div>
+
           <div className="pt-2 flex items-center justify-between border-t border-[#D4E2DC]">
             <button
               type="button"
@@ -744,12 +851,12 @@ const SendMoneyPage = () => {
                   type="button"
                   onClick={handleConfirmPayment}
                   disabled={isVerifying}
-                  className="w-full sm:w-auto px-6 py-2.5 rounded-lg bg-[#285C4D] hover:bg-[#1d453a] text-white font-semibold text-xs shadow-xs transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-[#285C4D] hover:bg-[#1d453a] text-white font-semibold text-xs shadow-xs transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {isVerifying ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Verifying & Settling...</span>
+                      <span>Verifying...</span>
                     </>
                   ) : (
                     <span>Confirm Payment</span>
@@ -757,12 +864,42 @@ const SendMoneyPage = () => {
                 </button>
                 <button
                   type="button"
+                  onClick={handleDeclinePayment}
+                  disabled={isVerifying}
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-lg border border-[#B65D59] text-[#8C3E3A] hover:bg-[#FBF0EF] font-semibold text-xs transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  {isVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+                  <span>Decline & Refund</span>
+                </button>
+                <button
+                  type="button"
                   onClick={handleReportUnauthorized}
                   disabled={isVerifying}
-                  className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-[#D4E2DC] text-[#5A6E65] hover:text-[#8C3E3A] hover:bg-[#FBF0EF] font-medium text-xs transition-colors disabled:opacity-50"
+                  className="w-full sm:w-auto px-3.5 py-2.5 rounded-lg border border-[#D4E2DC] text-[#5A6E65] hover:text-[#8C3E3A] hover:bg-[#FBF0EF] font-medium text-xs transition-colors disabled:opacity-50"
+                  title="Report to SOC Operations for investigation"
                 >
-                  I Didn't Initiate This
+                  Report Suspicious
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* DECLINED / REJECTED: FUNDS RESTORED */}
+          {outcome.status === 'REJECTED' && (
+            <div className="space-y-3">
+              <div className="w-14 h-14 rounded-full bg-[#FBF0EF] border border-[#E6BFBD] text-[#B65D59] flex items-center justify-center mx-auto">
+                <XCircle className="w-8 h-8" />
+              </div>
+              <h2 className="text-xl font-serif font-bold text-[#8C3E3A]">Payment Declined & Escrow Restored</h2>
+              <div className="p-4 rounded-lg bg-[#FBF0EF] border border-[#E6BFBD] text-left text-xs text-[#8C3E3A] leading-relaxed max-w-lg mx-auto space-y-2">
+                <p className="font-semibold text-[#17211D]">
+                  This transaction was declined. Quarantined escrow funds have been immediately returned to your available balance.
+                </p>
+                <div className="text-[11px] text-[#5A6E65] space-y-1">
+                  <div>• <strong>Available Balance:</strong> Restored (+₹{parseFloat(amount).toLocaleString('en-IN')})</div>
+                  <div>• <strong>Escrow Balance:</strong> Held funds decreased by ₹{parseFloat(amount).toLocaleString('en-IN')}</div>
+                  <div>• <strong>Recipient:</strong> Received ₹0 (zero funds transferred)</div>
+                </div>
               </div>
             </div>
           )}
